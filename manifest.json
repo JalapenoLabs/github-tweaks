@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "GitHub PR Enhancer",
+  "version": "1.0.0",
+  "description": "Moves the merge panel to the top of pull requests and renders PDF diffs inline.",
+  "host_permissions": [
+    "https://github.com/*",
+    "https://*.github.com/*",
+    "https://*.githubusercontent.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["viewer.html", "viewer.js"],
+      "matches": ["https://github.com/*"]
+    }
+  ]
+}

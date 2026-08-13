@@ -1,0 +1,21 @@
+/* Copyright © 2026 Jalapeno Labs */
+
+/* Give the relocated merge panel a little breathing room above the timeline. */
+.pr-enhancer-merge-panel {
+  margin-bottom: 16px;
+}
+
+/* Inline PDF diff preview. */
+.pr-enhancer-pdf-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--borderColor-default, #d0d7de);
+}
+
+.pr-enhancer-pdf-frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: #fff;
+}
