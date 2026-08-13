@@ -6,6 +6,9 @@
   var PDF_PROCESSED_MARKER = "data-pr-enhancer-pdf";
   var HIDDEN_DIVIDER_MARKER = "data-pr-enhancer-divider-hidden";
   var VIEWED_TREE_ROW_MARKER = "data-pr-enhancer-viewed";
+  var REVIEW_TOGGLE_CLASS = "pr-enhancer-review-toggle";
+  var REVIEW_LABEL = "Mark reviewed";
+  var UNREVIEW_LABEL = "Mark unreviewed";
 
   // src/content/githubSelectors.ts
   var DIFF_ENTRY_SELECTOR = '[class*="PullRequestDiffsList-module__diffEntry__"]';
@@ -16,6 +19,8 @@
   var FILE_TREE_ROW_SELECTOR = '[role="treeitem"][class*="DiffFileTree-module__file-tree-row__"]';
   var FILE_TREE_DIRECTORY_SELECTOR = '[role="treeitem"][aria-expanded]';
   var FILE_TREE_TOGGLE_SELECTOR = ":scope > .PRIVATE_TreeView-item-container > .PRIVATE_TreeView-item-toggle";
+  var FILE_TREE_ITEM_SELECTOR = '[role="treeitem"]';
+  var FILE_TREE_CONTENT_SLOT_SELECTOR = ":scope > .PRIVATE_TreeView-item-container > .PRIVATE_TreeView-item-content";
   var MERGE_PANEL_SELECTORS = ['[data-testid="mergebox-partial"]', "#partial-pull-merging"];
   var MERGE_BUTTON_GROUP_SELECTOR = '[data-component="ButtonGroup"]';
   var BUTTON_LABEL_SELECTOR = '[data-component="text"]';
@@ -373,10 +378,96 @@
 
   // src/content/fileTreeViewedState.ts
   var anchorsByRow = /* @__PURE__ */ new WeakMap();
+  var anchorsByFilePath = /* @__PURE__ */ new Map();
+  var cachedTreePathname = "";
+  var autoCollapsedDirectories = /* @__PURE__ */ new WeakSet();
+  function addReviewTogglesToTree() {
+    const rows = document.querySelectorAll(FILE_TREE_ITEM_SELECTOR);
+    if (!rows.length) {
+      return;
+    }
+    for (const row of rows) {
+      const slot = row.querySelector(FILE_TREE_CONTENT_SLOT_SELECTOR);
+      if (!slot) {
+        console.debug(LOG_PREFIX, "A file tree row has no content slot to hold its review button", row.id);
+        continue;
+      }
+      if (slot.querySelector(`:scope > .${REVIEW_TOGGLE_CLASS}`)) {
+        continue;
+      }
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = REVIEW_TOGGLE_CLASS;
+      button.addEventListener("click", onReviewToggleClick);
+      slot.appendChild(button);
+      describeReviewToggle(row);
+    }
+  }
+  function onReviewToggleClick(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const button = event.currentTarget;
+    if (!(button instanceof HTMLElement)) {
+      return;
+    }
+    const row = button.closest(FILE_TREE_ITEM_SELECTOR);
+    if (!row) {
+      console.debug(LOG_PREFIX, "A review button is not inside a tree row", button);
+      return;
+    }
+    setReviewedUnder(row, !row.hasAttribute(VIEWED_TREE_ROW_MARKER));
+  }
+  function setReviewedUnder(row, shouldBeViewed) {
+    const anchors = findFileAnchorsUnder(row);
+    if (!anchors.length) {
+      console.debug(LOG_PREFIX, "No files found to review under", row.id);
+      return;
+    }
+    let pressed = 0;
+    for (const anchor of anchors) {
+      const toggle = document.getElementById(anchor)?.querySelector(VIEWED_TOGGLE_SELECTOR);
+      if (!toggle) {
+        console.debug(LOG_PREFIX, "No viewed toggle rendered for", anchor);
+        continue;
+      }
+      if (toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === "true" === shouldBeViewed) {
+        continue;
+      }
+      toggle.click();
+      pressed++;
+    }
+    console.debug(LOG_PREFIX, `Pressed ${pressed} of ${anchors.length} viewed toggle(s) under ${row.id}`);
+    applyViewedState(row, shouldBeViewed);
+    if (!shouldBeViewed && row.matches(FILE_TREE_DIRECTORY_SELECTOR)) {
+      autoCollapsedDirectories.delete(row);
+      expandDirectory(row);
+    }
+  }
+  function findFileAnchorsUnder(row) {
+    if (row.matches(FILE_TREE_ROW_SELECTOR)) {
+      const anchor = anchorsByFilePath.get(row.id);
+      if (!anchor) {
+        return [];
+      }
+      return [anchor];
+    }
+    const prefix = `${row.id}/`;
+    const anchors = [];
+    for (const [path, anchor] of anchorsByFilePath) {
+      if (path.startsWith(prefix)) {
+        anchors.push(anchor);
+      }
+    }
+    return anchors;
+  }
   function markViewedFilesInTree() {
     const rows = document.querySelectorAll(FILE_TREE_ROW_SELECTOR);
     if (!rows.length) {
       return;
+    }
+    if (cachedTreePathname !== window.location.pathname) {
+      anchorsByFilePath.clear();
+      cachedTreePathname = window.location.pathname;
     }
     const viewedByAnchor = /* @__PURE__ */ new Map();
     for (const toggle of document.querySelectorAll(VIEWED_TOGGLE_SELECTOR)) {
@@ -389,7 +480,11 @@
     }
     for (const row of rows) {
       const anchor = getRowAnchor(row);
-      const isViewed = anchor ? viewedByAnchor.get(anchor) : void 0;
+      if (!anchor) {
+        continue;
+      }
+      anchorsByFilePath.set(row.id, anchor);
+      const isViewed = viewedByAnchor.get(anchor);
       if (isViewed !== void 0) {
         applyViewedState(row, isViewed);
       }
@@ -410,7 +505,6 @@
     }
     applyViewedState(row, toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === "true");
   }
-  var autoCollapsedDirectories = /* @__PURE__ */ new WeakSet();
   function rollUpViewedDirectories() {
     const directories = document.querySelectorAll(FILE_TREE_DIRECTORY_SELECTOR);
     if (!directories.length) {
@@ -445,14 +539,27 @@
     if (autoCollapsedDirectories.has(directory) || directory.getAttribute("aria-expanded") !== "true") {
       return;
     }
-    const toggle = directory.querySelector(FILE_TREE_TOGGLE_SELECTOR);
-    if (!toggle) {
-      console.debug(LOG_PREFIX, "A finished directory has no chevron to collapse", directory.id);
+    autoCollapsedDirectories.add(directory);
+    if (clickDirectoryChevron(directory)) {
+      console.debug(LOG_PREFIX, "Collapsed a fully reviewed directory:", directory.id);
+    }
+  }
+  function expandDirectory(directory) {
+    if (directory.getAttribute("aria-expanded") !== "false") {
       return;
     }
-    autoCollapsedDirectories.add(directory);
-    toggle.click();
-    console.debug(LOG_PREFIX, "Collapsed a fully reviewed directory:", directory.id);
+    if (clickDirectoryChevron(directory)) {
+      console.debug(LOG_PREFIX, "Reopened an un-reviewed directory:", directory.id);
+    }
+  }
+  function clickDirectoryChevron(directory) {
+    const chevron = directory.querySelector(FILE_TREE_TOGGLE_SELECTOR);
+    if (!chevron) {
+      console.debug(LOG_PREFIX, "A directory row has no chevron to click", directory.id);
+      return false;
+    }
+    chevron.click();
+    return true;
   }
   function applyViewedState(row, isViewed) {
     if (row.hasAttribute(VIEWED_TREE_ROW_MARKER) === isViewed) {
@@ -460,9 +567,21 @@
     }
     if (isViewed) {
       row.setAttribute(VIEWED_TREE_ROW_MARKER, "true");
+    } else {
+      row.removeAttribute(VIEWED_TREE_ROW_MARKER);
+    }
+    describeReviewToggle(row);
+  }
+  function describeReviewToggle(row) {
+    const button = row.querySelector(
+      `${FILE_TREE_CONTENT_SLOT_SELECTOR} > .${REVIEW_TOGGLE_CLASS}`
+    );
+    if (!button) {
       return;
     }
-    row.removeAttribute(VIEWED_TREE_ROW_MARKER);
+    const label = row.hasAttribute(VIEWED_TREE_ROW_MARKER) ? UNREVIEW_LABEL : REVIEW_LABEL;
+    button.title = label;
+    button.setAttribute("aria-label", label);
   }
   function getRowAnchor(row) {
     const cached = anchorsByRow.get(row);
@@ -517,6 +636,7 @@
       return;
     }
     reserveAccurateDiffHeights();
+    addReviewTogglesToTree();
     markViewedFilesInTree();
     rollUpViewedDirectories();
     renderPdfPreviews();

@@ -142,43 +142,102 @@
 }
 
 /* ------------------------------------------------------------------------------------
-   File tree: show which files are already viewed
+   File tree: review a file, or a whole folder, from the sidebar
 
    GitHub keeps the "Viewed" state out of the sidebar, so a long review offers no sense of
-   progress without scrolling the diff column to check. fileTreeViewedState.ts marks the rows
-   whose files are viewed, and the directories whose every descendant is; the checkmark is
-   drawn here.
+   progress without scrolling the diff column to check, and no way to record it from here.
+   fileTreeViewedState.ts gives every row a checkmark button; this draws it.
+
+   Hidden and yellow until you hover the row, meaning "not reviewed, press to review".
+   Always on and green once the row is done, meaning "reviewed, press to undo".
 
    `PRIVATE_TreeView-*` are Primer's own unhashed class names and stay put across builds,
    unlike the `prc-TreeView-*-<hash>` ones sitting beside them in the same attribute.
 
    Every combinator below is a child combinator, deliberately. A directory row contains all of
    its descendants, so a descendant selector would paint a checkmark onto every row inside a
-   finished folder rather than onto the folder itself.
+   finished folder rather than onto the folder itself, and would light up a folder's button
+   whenever the pointer was anywhere inside it.
    ------------------------------------------------------------------------------------ */
-[data-pr-enhancer-viewed='true'] > .PRIVATE_TreeView-item-container > .PRIVATE_TreeView-item-content {
+.PRIVATE_TreeView-item-content:has(> .pr-enhancer-review-toggle) {
   position: relative;
-  /* Hold the checkmark's column open so a long file name truncates before it reaches it. */
-  padding-right: 18px;
+  /* Hold the button's column open so a long file name truncates before it reaches it. */
+  padding-right: 20px;
 }
 
-[data-pr-enhancer-viewed='true'] > .PRIVATE_TreeView-item-container > .PRIVATE_TreeView-item-content::after {
-  content: '';
+.pr-enhancer-review-toggle {
   position: absolute;
   top: 50%;
-  right: 2px;
-  width: 14px;
-  height: 14px;
+  right: 0;
+  display: block;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  /* Invisible also means unclickable, so a row that is not being hovered has no hidden target
+     sitting on it. Anything that reveals the button below re-enables it in the same rule. */
+  opacity: 0;
+  pointer-events: none;
   transform: translateY(-50%);
-  /* Masked rather than drawn as a background image, so the octicon takes the theme's own
-     success colour in both light and dark mode instead of shipping two copies of the asset. */
-  background-color: var(--fgColor-success, #1a7f37);
+  transition: opacity 120ms ease, transform 120ms ease, background-color 120ms ease;
+}
+
+.pr-enhancer-review-toggle::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  content: '';
+  /* Masked rather than drawn as a background image, so the octicon takes a theme colour in
+     both light and dark mode instead of shipping two copies of the asset. */
+  background-color: var(--fgColor-attention, #9a6700);
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z'/%3E%3C/svg%3E");
   -webkit-mask-size: contain;
   mask-size: contain;
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
+}
+
+/* Hovering the row's own container, never the row element: a directory element contains its
+   children, so `li:hover` would light up a folder's button from anywhere inside the folder. */
+.PRIVATE_TreeView-item-container:hover > .PRIVATE_TreeView-item-content > .pr-enhancer-review-toggle,
+.pr-enhancer-review-toggle:focus-visible,
+[data-pr-enhancer-viewed='true']
+  > .PRIVATE_TreeView-item-container
+  > .PRIVATE_TreeView-item-content
+  > .pr-enhancer-review-toggle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+[data-pr-enhancer-viewed='true']
+  > .PRIVATE_TreeView-item-container
+  > .PRIVATE_TreeView-item-content
+  > .pr-enhancer-review-toggle::before {
+  background-color: var(--fgColor-success, #1a7f37);
+}
+
+.pr-enhancer-review-toggle:hover {
+  background-color: var(--bgColor-neutral-muted, rgb(129 139 152 / 20%));
+  transform: translateY(-50%) scale(1.2);
+}
+
+.pr-enhancer-review-toggle:active {
+  transform: translateY(-50%) scale(0.92);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pr-enhancer-review-toggle {
+    transition: none;
+  }
+
+  .pr-enhancer-review-toggle:hover,
+  .pr-enhancer-review-toggle:active {
+    transform: translateY(-50%);
+  }
 }
 
 /* Fade the name the way GitHub fades the diff header the row stands for. */

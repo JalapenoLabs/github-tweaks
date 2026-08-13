@@ -15,6 +15,12 @@ export const HIDDEN_DIVIDER_MARKER = 'data-pr-enhancer-divider-hidden'
 // on every re-render; it leaves attributes it never set alone.
 export const VIEWED_TREE_ROW_MARKER = 'data-pr-enhancer-viewed'
 
+// The checkmark button the content script adds to every file tree row. It is the one node we
+// inject into React's tree, so the sweep re-adds it if React ever takes it back.
+export const REVIEW_TOGGLE_CLASS = 'pr-enhancer-review-toggle'
+export const REVIEW_LABEL = 'Mark reviewed'
+export const UNREVIEW_LABEL = 'Mark unreviewed'
+
 // Only these hosts may be fetched by the viewer page, which sends the user's GitHub
 // cookies. Restricting the origin prevents the viewer from being abused as a credentialed
 // fetch proxy for arbitrary URLs.

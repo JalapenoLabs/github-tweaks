@@ -1,27 +1,58 @@
 # File tree sidebar
 
-## Viewed files carry a checkmark
+The sidebar is where a review is tracked: every row shows whether it is done, and lets you say
+so. `src/content/fileTreeViewedState.ts` owns all of it.
 
-GitHub keeps the "Viewed" state out of the sidebar, so a long review offers no sense of
-progress without scrolling the diff column to check. `src/content/fileTreeViewedState.ts`
-mirrors each file's toggle onto its tree row: a green octicon check at the end of the row and
-a faded file name.
+## The checkmark
 
-### Where the state comes from
+Every row carries a checkmark button at its right edge.
 
-We read the toggle, rather than tracking clicks. That also picks up the state GitHub restores
-from the server on load, and anything marked viewed in another tab. The `diff-<sha>` fragment
-joins the two halves of the page: the toggle lives inside the file's diff region, and the
-tree row links to that same fragment.
+| Row state | Appearance | Pressing it |
+| --- | --- | --- |
+| Not reviewed | hidden until you hover the row, then yellow | "Mark reviewed" |
+| Reviewed | always visible, green, name faded | "Mark unreviewed" |
 
-### Why an attribute and not a class
+The button grows slightly under the pointer and dips when pressed, and both animations are
+dropped under `prefers-reduced-motion`. The tooltip names the action, not the state.
 
-The row is marked with `data-pr-enhancer-viewed`, and CSS draws the checkmark off that.
+Hidden also means unclickable (`pointer-events: none`), so a row you are not hovering has no
+invisible target sitting on it. Every rule that reveals the button re-enables it in the same
+declaration.
 
-- Injecting our own nodes into a React-owned tree risks the reconciliation crashes that come
-  from touching children React believes it owns.
-- A class would not survive. React rewrites `className` on every re-render, while leaving
-  attributes it never set alone.
+Hover is detected on the row's own **container**, never the row element. A directory row
+contains its descendants, so `li:hover` would light a folder's button up from anywhere inside
+the folder.
+
+## Reading the state
+
+We read GitHub's per-file toggle rather than tracking clicks, so we also pick up the state the
+server restores on load and anything marked viewed in another tab. The `diff-<sha>` fragment
+joins the two halves of the page: the toggle lives inside the file's diff region, and the tree
+row links to that same fragment.
+
+## Writing the state
+
+Pressing a row's checkmark clicks the real toggles in the diff column. Nothing here decides
+what "viewed" means; it only presses GitHub's buttons and lets the observer watching them
+paint the result back. Only toggles actually out of step are pressed, since each click is a
+request.
+
+A directory's button stands for every file beneath it, resolved through a **path map** rather
+than the DOM. This matters: a finished folder auto-collapses, Primer unmounts its rows, and
+the whole point of clicking its green check is to undo it. Walking the DOM at that moment
+finds nothing. So every file path the tree has shown is kept mapped to its diff anchor, and a
+directory takes every path under `<its id>/`. Un-reviewing a directory also reopens it, since
+leaving it shut would hide the files the user just asked to read again.
+
+## Why an attribute, and one injected node
+
+The viewed state is recorded as `data-pr-enhancer-viewed` on the row. React rewrites
+`className` on every re-render but leaves attributes it never set alone, so an attribute
+survives where a class would not.
+
+The button is the one node we inject into React's tree. Rather than trust a single insertion
+to last, the sweep re-adds it to any row missing one; a row already carrying its button costs
+one shallow query to skip.
 
 ### Two update paths
 

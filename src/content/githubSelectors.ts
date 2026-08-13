@@ -39,6 +39,15 @@ export const FILE_TREE_DIRECTORY_SELECTOR = '[role="treeitem"][aria-expanded]'
 export const FILE_TREE_TOGGLE_SELECTOR =
   ':scope > .PRIVATE_TreeView-item-container > .PRIVATE_TreeView-item-toggle'
 
+// Every row, of either kind. The two selectors above partition this set exactly.
+export const FILE_TREE_ITEM_SELECTOR = '[role="treeitem"]'
+
+// Where a row renders its icon and name, and where we hang the review button. Scoped to the
+// row's own chrome, which excludes a directory's children: the nested list of children is a
+// sibling of this container, not a descendant of it.
+export const FILE_TREE_CONTENT_SLOT_SELECTOR =
+  ':scope > .PRIVATE_TreeView-item-container > .PRIVATE_TreeView-item-content'
+
 // The merge box on the conversation tab. The first selector is the modern React UI, the
 // second the classic markup kept as a fallback.
 export const MERGE_PANEL_SELECTORS = ['[data-testid="mergebox-partial"]', '#partial-pull-merging']

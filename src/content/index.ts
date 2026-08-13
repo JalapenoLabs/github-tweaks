@@ -14,7 +14,12 @@ import { relocateMergePanel, hideTrailingTimelineDivider } from './mergePanel'
 import { ensureMergeDock, hideMergeDock } from './mergeDock'
 import { renderPdfPreviews } from './pdfPreview'
 import { reserveAccurateDiffHeights } from './diffPlaceholders'
-import { markViewedFilesInTree, rollUpViewedDirectories, syncViewedRowForToggle } from './fileTreeViewedState'
+import {
+  addReviewTogglesToTree,
+  markViewedFilesInTree,
+  rollUpViewedDirectories,
+  syncViewedRowForToggle
+} from './fileTreeViewedState'
 
 const PULL_CONVERSATION_PATTERN = /^\/[^/]+\/[^/]+\/pull\/\d+\/?$/
 // The classic diff UI lives at /files; the modern React UI lives at /changes.
@@ -75,6 +80,7 @@ function runFilesScan() {
   }
 
   reserveAccurateDiffHeights()
+  addReviewTogglesToTree()
   markViewedFilesInTree()
   rollUpViewedDirectories()
   renderPdfPreviews()

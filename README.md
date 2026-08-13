@@ -14,11 +14,12 @@ A small Chrome extension (Manifest V3, TypeScript) that improves GitHub pull req
    thousands of pixels whenever that file passes the viewport. The extension measures what is
    really there and reserves honestly. It also lets the browser skip file tree rows scrolled
    out of the sidebar, which GitHub does not virtualize at all.
-4. **Viewed files marked in the sidebar.** Each file's "Viewed" toggle is mirrored onto its
-   row in the file tree as a checkmark and a faded name, so review progress is visible without
-   scrolling the diff column to find it. A folder whose every descendant is viewed checks
-   itself and folds away, upwards as far as the review is finished, leaving only what is left
-   to read.
+4. **Review from the sidebar.** Each file's "Viewed" toggle is mirrored onto its row in the
+   file tree as a checkmark and a faded name, so progress is visible without scrolling the
+   diff column to find it. Hover any row and the checkmark appears in yellow: press it to mark
+   that file reviewed, or a whole folder and everything under it. Press a green one to undo.
+   A folder whose every descendant is viewed checks itself and folds away, upwards as far as
+   the review is finished, leaving only what is left to read.
 5. **A floating dock on the conversation tab.** Scroll down and two buttons pin themselves to
    the bottom left: "Back to top", and the pull request's merge action. The merge button is a
    proxy: it copies the real button's label, disabled state and blocked reason, and clicking
