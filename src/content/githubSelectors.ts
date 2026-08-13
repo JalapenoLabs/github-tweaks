@@ -29,6 +29,16 @@ export const VIEWED_TOGGLE_STATE_ATTRIBUTE = 'aria-pressed'
 // contained or marked viewed.
 export const FILE_TREE_ROW_SELECTOR = '[role="treeitem"][class*="DiffFileTree-module__file-tree-row__"]'
 
+// Directory rows. `aria-expanded` partitions the tree exactly: on a captured 400-file review,
+// 397 file rows and 109 directory rows account for all 506 tree items with no overlap. A
+// directory's `id` is its path, and its descendants are nested inside it.
+export const FILE_TREE_DIRECTORY_SELECTOR = '[role="treeitem"][aria-expanded]'
+
+// A directory's own chevron. Scoping to `:scope >` matters: an unqualified descendant search
+// would find the toggle of the first nested directory instead.
+export const FILE_TREE_TOGGLE_SELECTOR =
+  ':scope > .PRIVATE_TreeView-item-container > .PRIVATE_TreeView-item-toggle'
+
 // The merge box on the conversation tab. The first selector is the modern React UI, the
 // second the classic markup kept as a fallback.
 export const MERGE_PANEL_SELECTORS = ['[data-testid="mergebox-partial"]', '#partial-pull-merging']

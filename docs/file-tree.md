@@ -40,12 +40,46 @@ It is positioned absolutely inside `.PRIVATE_TreeView-item-content`, which is im
 whether Primer lays that row out with flex or grid, and the slot's `padding-right` holds its
 column open so a long file name truncates before reaching it.
 
+## Finished folders check themselves and fold away
+
+A directory whose every descendant file is viewed gets the same checkmark and collapses, so
+what stays on screen is what is left to review.
+
+### The rules
+
+- **Descendants, not children.** A folder is finished only when everything beneath it is,
+  however deep.
+- **Only the outermost finished folder of a branch collapses.** Everything below it folds away
+  with it, so collapsing the children too would be wasted work. This is what walks the
+  collapse upwards as a review fills in: once the last sibling is viewed, the parent takes
+  over from the children it contains. All finished folders still get a checkmark; only the
+  outermost one collapses.
+- **Once per completion, not once per sweep.** A folder the user reopens to re-read stays
+  open. A directory only becomes eligible to collapse again after going incomplete and
+  finishing a second time.
+- **A collapsed folder keeps its checkmark.** Primer unmounts the children of a collapsed
+  directory, so there is nothing left to count; rather than clear a mark it cannot currently
+  re-earn, the sweep leaves whatever it last concluded. This also protects folders the user
+  collapsed by hand, which would otherwise read as vacuously finished.
+
+Against the captured 400-file review with 18 files viewed, five directories are finished and
+three collapse: `.github`, `bifrost/src/common` and `bifrost/src/lib/args`, each the outermost
+finished folder of its own branch. `.github/scripts` and `.github/workflows` are finished too
+and keep their checkmarks, but `.github` folds them away.
+
+### Collapsing
+
+Primer holds the expanded state in React, so writing `aria-expanded` would only desynchronise
+the attribute from the component that owns it. The chevron is clicked instead, exactly as a
+user would. The selector for it is scoped with `:scope >`, since an unqualified descendant
+search finds the first *nested* directory's chevron rather than the folder's own.
+
 ## Rows scrolled out of the sidebar are skipped
 
 See [performance.md](./performance.md).
 
 ## Roadmap
 
-- Roll the viewed count into the tree's directory rows, so a folder shows how many of its
-  files are done.
+- Show a count on unfinished directory rows, so a folder reads "7 of 12" rather than only
+  finished or not.
 - Offer a filter that hides viewed files from the tree entirely.

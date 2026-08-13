@@ -146,18 +146,23 @@
 
    GitHub keeps the "Viewed" state out of the sidebar, so a long review offers no sense of
    progress without scrolling the diff column to check. fileTreeViewedState.ts marks the rows
-   whose files are viewed; the checkmark is drawn here.
+   whose files are viewed, and the directories whose every descendant is; the checkmark is
+   drawn here.
 
    `PRIVATE_TreeView-*` are Primer's own unhashed class names and stay put across builds,
    unlike the `prc-TreeView-*-<hash>` ones sitting beside them in the same attribute.
+
+   Every combinator below is a child combinator, deliberately. A directory row contains all of
+   its descendants, so a descendant selector would paint a checkmark onto every row inside a
+   finished folder rather than onto the folder itself.
    ------------------------------------------------------------------------------------ */
-[data-pr-enhancer-viewed='true'] .PRIVATE_TreeView-item-content {
+[data-pr-enhancer-viewed='true'] > .PRIVATE_TreeView-item-container > .PRIVATE_TreeView-item-content {
   position: relative;
   /* Hold the checkmark's column open so a long file name truncates before it reaches it. */
   padding-right: 18px;
 }
 
-[data-pr-enhancer-viewed='true'] .PRIVATE_TreeView-item-content::after {
+[data-pr-enhancer-viewed='true'] > .PRIVATE_TreeView-item-container > .PRIVATE_TreeView-item-content::after {
   content: '';
   position: absolute;
   top: 50%;
@@ -177,6 +182,9 @@
 }
 
 /* Fade the name the way GitHub fades the diff header the row stands for. */
-[data-pr-enhancer-viewed='true'] .PRIVATE_TreeView-item-content-text {
+[data-pr-enhancer-viewed='true']
+  > .PRIVATE_TreeView-item-container
+  > .PRIVATE_TreeView-item-content
+  > .PRIVATE_TreeView-item-content-text {
   opacity: 0.55;
 }

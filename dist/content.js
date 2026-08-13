@@ -14,6 +14,8 @@
   var VIEWED_TOGGLE_SELECTOR = 'button[class*="MarkAsViewedButton-module__"]';
   var VIEWED_TOGGLE_STATE_ATTRIBUTE = "aria-pressed";
   var FILE_TREE_ROW_SELECTOR = '[role="treeitem"][class*="DiffFileTree-module__file-tree-row__"]';
+  var FILE_TREE_DIRECTORY_SELECTOR = '[role="treeitem"][aria-expanded]';
+  var FILE_TREE_TOGGLE_SELECTOR = ":scope > .PRIVATE_TreeView-item-container > .PRIVATE_TreeView-item-toggle";
   var MERGE_PANEL_SELECTORS = ['[data-testid="mergebox-partial"]', "#partial-pull-merging"];
   var MERGE_BUTTON_GROUP_SELECTOR = '[data-component="ButtonGroup"]';
   var BUTTON_LABEL_SELECTOR = '[data-component="text"]';
@@ -408,6 +410,50 @@
     }
     applyViewedState(row, toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === "true");
   }
+  var autoCollapsedDirectories = /* @__PURE__ */ new WeakSet();
+  function rollUpViewedDirectories() {
+    const directories = document.querySelectorAll(FILE_TREE_DIRECTORY_SELECTOR);
+    if (!directories.length) {
+      return;
+    }
+    const completedDirectories = /* @__PURE__ */ new Set();
+    for (const directory of directories) {
+      const files = directory.querySelectorAll(FILE_TREE_ROW_SELECTOR);
+      if (!files.length) {
+        if (directory.hasAttribute(VIEWED_TREE_ROW_MARKER)) {
+          completedDirectories.add(directory);
+        }
+        continue;
+      }
+      const isComplete = Array.from(files).every((file) => file.hasAttribute(VIEWED_TREE_ROW_MARKER));
+      applyViewedState(directory, isComplete);
+      if (isComplete) {
+        completedDirectories.add(directory);
+      } else {
+        autoCollapsedDirectories.delete(directory);
+      }
+    }
+    for (const directory of completedDirectories) {
+      const parent = directory.parentElement?.closest(FILE_TREE_DIRECTORY_SELECTOR);
+      if (parent && completedDirectories.has(parent)) {
+        continue;
+      }
+      collapseDirectory(directory);
+    }
+  }
+  function collapseDirectory(directory) {
+    if (autoCollapsedDirectories.has(directory) || directory.getAttribute("aria-expanded") !== "true") {
+      return;
+    }
+    const toggle = directory.querySelector(FILE_TREE_TOGGLE_SELECTOR);
+    if (!toggle) {
+      console.debug(LOG_PREFIX, "A finished directory has no chevron to collapse", directory.id);
+      return;
+    }
+    autoCollapsedDirectories.add(directory);
+    toggle.click();
+    console.debug(LOG_PREFIX, "Collapsed a fully reviewed directory:", directory.id);
+  }
   function applyViewedState(row, isViewed) {
     if (row.hasAttribute(VIEWED_TREE_ROW_MARKER) === isViewed) {
       return;
@@ -472,6 +518,7 @@
     }
     reserveAccurateDiffHeights();
     markViewedFilesInTree();
+    rollUpViewedDirectories();
     renderPdfPreviews();
   }
   var scheduledFrame = 0;
@@ -487,10 +534,15 @@
   var structureObserver = new MutationObserver(scheduleRun);
   structureObserver.observe(document.body, { childList: true, subtree: true });
   var viewedObserver = new MutationObserver((records) => {
+    let didSyncAnyRow = false;
     for (const record of records) {
       if (record.target instanceof HTMLElement && record.target.matches(VIEWED_TOGGLE_SELECTOR)) {
         syncViewedRowForToggle(record.target);
+        didSyncAnyRow = true;
       }
+    }
+    if (didSyncAnyRow) {
+      rollUpViewedDirectories();
     }
   });
   viewedObserver.observe(document.body, {

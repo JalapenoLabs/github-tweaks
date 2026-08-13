@@ -50,12 +50,19 @@ request" is a button on the same page, outside it.
 | Thing | How to find it |
 | --- | --- |
 | Leaf file row | `[role="treeitem"][class*="DiffFileTree-module__file-tree-row__"]` |
-| Its file path | the row's `id` |
-| Its diff link | `a[href^="#diff-"]` inside the row |
-| Icon and name slot | `.PRIVATE_TreeView-item-content` |
-| Name only | `.PRIVATE_TreeView-item-content-text` |
+| Directory row | `[role="treeitem"][aria-expanded]` |
+| Its path | the row's `id`, for files and directories alike |
+| Its diff link | `a[href^="#diff-"]` inside a file row |
+| Icon and name slot | `:scope > .PRIVATE_TreeView-item-container > .PRIVATE_TreeView-item-content` |
+| Name only | `.PRIVATE_TreeView-item-content-text` inside that slot |
+| Directory chevron | `:scope > .PRIVATE_TreeView-item-container > .PRIVATE_TreeView-item-toggle` |
 
-Directory rows share the TreeView classes but not `file-tree-row`.
+`aria-expanded` partitions the tree exactly: on the captured review, 397 file rows and 109
+directory rows account for all 506 tree items, with no row in both sets.
+
+Scope anything aimed at a row's own chrome with `:scope >`, and write CSS for it with child
+combinators. A directory row *contains* its descendants, so a descendant selector reaches
+every row inside the folder rather than the folder itself.
 
 ### The join
 

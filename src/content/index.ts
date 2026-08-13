@@ -14,7 +14,7 @@ import { relocateMergePanel, hideTrailingTimelineDivider } from './mergePanel'
 import { ensureMergeDock, hideMergeDock } from './mergeDock'
 import { renderPdfPreviews } from './pdfPreview'
 import { reserveAccurateDiffHeights } from './diffPlaceholders'
-import { markViewedFilesInTree, syncViewedRowForToggle } from './fileTreeViewedState'
+import { markViewedFilesInTree, rollUpViewedDirectories, syncViewedRowForToggle } from './fileTreeViewedState'
 
 const PULL_CONVERSATION_PATTERN = /^\/[^/]+\/[^/]+\/pull\/\d+\/?$/
 // The classic diff UI lives at /files; the modern React UI lives at /changes.
@@ -76,6 +76,7 @@ function runFilesScan() {
 
   reserveAccurateDiffHeights()
   markViewedFilesInTree()
+  rollUpViewedDirectories()
   renderPdfPreviews()
 }
 
@@ -102,10 +103,19 @@ structureObserver.observe(document.body, { childList: true, subtree: true })
 // sidebar answer on the spot rather than waiting out the scan interval, which is far too
 // slow to acknowledge a click the user just made.
 const viewedObserver = new MutationObserver((records) => {
+  let didSyncAnyRow = false
+
   for (const record of records) {
     if (record.target instanceof HTMLElement && record.target.matches(VIEWED_TOGGLE_SELECTOR)) {
       syncViewedRowForToggle(record.target)
+      didSyncAnyRow = true
     }
+  }
+
+  // Roll up once for the whole batch rather than once per file, since marking the last file in
+  // a folder is exactly the moment its parents finish too.
+  if (didSyncAnyRow) {
+    rollUpViewedDirectories()
   }
 })
 viewedObserver.observe(document.body, {
