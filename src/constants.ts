@@ -21,6 +21,10 @@ export const REVIEW_TOGGLE_CLASS = 'pr-enhancer-review-toggle'
 export const REVIEW_LABEL = 'Mark reviewed'
 export const UNREVIEW_LABEL = 'Mark unreviewed'
 
+// Set on a row whose files are still working their way through the press queue, so the row
+// can show it is mid-flight and refuse a second press until the batch lands.
+export const PENDING_PRESSES_MARKER = 'data-pr-enhancer-pending'
+
 // Only these hosts may be fetched by the viewer page, which sends the user's GitHub
 // cookies. Restricting the origin prevents the viewer from being abused as a credentialed
 // fetch proxy for arbitrary URLs.

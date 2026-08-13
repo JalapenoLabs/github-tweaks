@@ -9,6 +9,7 @@
   var REVIEW_TOGGLE_CLASS = "pr-enhancer-review-toggle";
   var REVIEW_LABEL = "Mark reviewed";
   var UNREVIEW_LABEL = "Mark unreviewed";
+  var PENDING_PRESSES_MARKER = "data-pr-enhancer-pending";
 
   // src/content/githubSelectors.ts
   var DIFF_ENTRY_SELECTOR = '[class*="PullRequestDiffsList-module__diffEntry__"]';
@@ -381,6 +382,10 @@
   var anchorsByFilePath = /* @__PURE__ */ new Map();
   var cachedTreePathname = "";
   var autoCollapsedDirectories = /* @__PURE__ */ new WeakSet();
+  var PRESS_INTERVAL_MS = 100;
+  var pendingPresses = /* @__PURE__ */ new Map();
+  var rowsAwaitingPresses = /* @__PURE__ */ new Set();
+  var isDrainingPresses = false;
   function addReviewTogglesToTree() {
     const rows = document.querySelectorAll(FILE_TREE_ITEM_SELECTOR);
     if (!rows.length) {
@@ -415,33 +420,65 @@
       console.debug(LOG_PREFIX, "A review button is not inside a tree row", button);
       return;
     }
-    setReviewedUnder(row, !row.hasAttribute(VIEWED_TREE_ROW_MARKER));
-  }
-  function setReviewedUnder(row, shouldBeViewed) {
     const anchors = findFileAnchorsUnder(row);
     if (!anchors.length) {
       console.debug(LOG_PREFIX, "No files found to review under", row.id);
       return;
     }
-    let pressed = 0;
+    const willBeReviewed = anchors.every(isHeadedForReviewed);
+    setReviewedUnder(row, anchors, !willBeReviewed);
+  }
+  function isHeadedForReviewed(anchor) {
+    const queued = pendingPresses.get(anchor);
+    if (queued !== void 0) {
+      return queued;
+    }
+    const toggle = document.getElementById(anchor)?.querySelector(VIEWED_TOGGLE_SELECTOR);
+    return toggle?.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === "true";
+  }
+  function setReviewedUnder(row, anchors, shouldBeViewed) {
     for (const anchor of anchors) {
-      const toggle = document.getElementById(anchor)?.querySelector(VIEWED_TOGGLE_SELECTOR);
-      if (!toggle) {
-        console.debug(LOG_PREFIX, "No viewed toggle rendered for", anchor);
-        continue;
+      pendingPresses.set(anchor, shouldBeViewed);
+    }
+    rowsAwaitingPresses.add(row);
+    row.setAttribute(PENDING_PRESSES_MARKER, "true");
+    console.debug(LOG_PREFIX, `Queued ${anchors.length} viewed toggle(s) under ${row.id}`);
+    if (!shouldBeViewed) {
+      applyViewedState(row, false);
+      if (row.matches(FILE_TREE_DIRECTORY_SELECTOR)) {
+        autoCollapsedDirectories.delete(row);
+        expandDirectory(row);
       }
-      if (toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === "true" === shouldBeViewed) {
-        continue;
+    }
+    startDrainingPresses();
+  }
+  function startDrainingPresses() {
+    if (isDrainingPresses) {
+      return;
+    }
+    isDrainingPresses = true;
+    drainNextPress();
+  }
+  function drainNextPress() {
+    const [nextPress] = pendingPresses;
+    if (!nextPress) {
+      isDrainingPresses = false;
+      for (const row of rowsAwaitingPresses) {
+        row.removeAttribute(PENDING_PRESSES_MARKER);
       }
+      rowsAwaitingPresses.clear();
+      rollUpViewedDirectories();
+      return;
+    }
+    const [anchor, shouldBeViewed] = nextPress;
+    pendingPresses.delete(anchor);
+    const toggle = document.getElementById(anchor)?.querySelector(VIEWED_TOGGLE_SELECTOR);
+    if (!toggle) {
+      console.debug(LOG_PREFIX, "No viewed toggle rendered for", anchor);
+    } else if (toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === "true" !== shouldBeViewed) {
       toggle.click();
-      pressed++;
     }
-    console.debug(LOG_PREFIX, `Pressed ${pressed} of ${anchors.length} viewed toggle(s) under ${row.id}`);
-    applyViewedState(row, shouldBeViewed);
-    if (!shouldBeViewed && row.matches(FILE_TREE_DIRECTORY_SELECTOR)) {
-      autoCollapsedDirectories.delete(row);
-      expandDirectory(row);
-    }
+    window.setTimeout(drainNextPress, PRESS_INTERVAL_MS);
   }
   function findFileAnchorsUnder(row) {
     if (row.matches(FILE_TREE_ROW_SELECTOR)) {
@@ -506,6 +543,9 @@
     applyViewedState(row, toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === "true");
   }
   function rollUpViewedDirectories() {
+    if (isDrainingPresses) {
+      return;
+    }
     const directories = document.querySelectorAll(FILE_TREE_DIRECTORY_SELECTOR);
     if (!directories.length) {
       return;

@@ -229,6 +229,25 @@
   transform: translateY(-50%) scale(0.92);
 }
 
+/* A folder's files are pressed one at a time to stay inside GitHub's write throttling, so a
+   large folder takes a few seconds to land. Pulse while it does, and refuse a second press
+   until it has: the rows underneath turn green as they go, and this says the rest are coming.
+   ------------------------------------------------------------------------------------ */
+[data-pr-enhancer-pending='true']
+  > .PRIVATE_TreeView-item-container
+  > .PRIVATE_TreeView-item-content
+  > .pr-enhancer-review-toggle {
+  opacity: 1;
+  pointer-events: none;
+  animation: pr-enhancer-pending-pulse 900ms ease-in-out infinite;
+}
+
+@keyframes pr-enhancer-pending-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pr-enhancer-review-toggle {
     transition: none;
@@ -237,6 +256,14 @@
   .pr-enhancer-review-toggle:hover,
   .pr-enhancer-review-toggle:active {
     transform: translateY(-50%);
+  }
+
+  [data-pr-enhancer-pending='true']
+    > .PRIVATE_TreeView-item-container
+    > .PRIVATE_TreeView-item-content
+    > .pr-enhancer-review-toggle {
+    opacity: 0.5;
+    animation: none;
   }
 }
 

@@ -22,6 +22,7 @@
 
 import {
   LOG_PREFIX,
+  PENDING_PRESSES_MARKER,
   REVIEW_LABEL,
   REVIEW_TOGGLE_CLASS,
   UNREVIEW_LABEL,
@@ -52,6 +53,19 @@ let cachedTreePathname = ''
 // re-read stays open, and dropping a directory from this set the moment it goes incomplete
 // again lets a later completion collapse it afresh.
 const autoCollapsedDirectories = new WeakSet<HTMLElement>()
+
+// Marking a folder is one write per file, and GitHub throttles bursts of writes to a single
+// repository. Ten a second is brisk enough to feel deliberate and gentle enough that a two
+// hundred file folder does not arrive as a flood.
+const PRESS_INTERVAL_MS = 100
+
+// One queue for the whole page, because every press is a write to the same repository. Keyed
+// by anchor so the newest intent for a file replaces an older queued one: reviewing a folder
+// and then undoing it must leave one press queued rather than two that fight. A Map iterates
+// in insertion order, so this is still a queue.
+const pendingPresses = new Map<string, boolean>()
+const rowsAwaitingPresses = new Set<HTMLElement>()
+let isDrainingPresses = false
 
 // Gives every row its checkmark button. React owns these rows, so rather than trust one
 // insertion to last, the sweep checks and re-adds. A row already carrying its button costs one
@@ -100,48 +114,100 @@ function onReviewToggleClick(event: MouseEvent) {
     return
   }
 
-  setReviewedUnder(row, !row.hasAttribute(VIEWED_TREE_ROW_MARKER))
-}
-
-// Marks a row and, for a directory, everything beneath it. We do not write the state
-// ourselves: we press the real per-file toggles that already own it, and let the observer
-// watching them paint the result back onto the tree.
-function setReviewedUnder(row: HTMLElement, shouldBeViewed: boolean) {
   const anchors = findFileAnchorsUnder(row)
   if (!anchors.length) {
     console.debug(LOG_PREFIX, 'No files found to review under', row.id)
     return
   }
 
-  let pressed = 0
+  // Decide against where the row is heading, not the checkmark it currently shows. A press
+  // queued a moment ago has not painted yet, so a user reversing their own last click would
+  // otherwise be read as confirming it and the file would end up pressed twice into the same
+  // state. Reading the toggles also sidesteps a directory mark the roll-up has not caught up
+  // with.
+  const willBeReviewed = anchors.every(isHeadedForReviewed)
+  setReviewedUnder(row, anchors, !willBeReviewed)
+}
+
+// Where a file will stand once everything queued for it has landed.
+function isHeadedForReviewed(anchor: string): boolean {
+  const queued = pendingPresses.get(anchor)
+  if (queued !== undefined) {
+    return queued
+  }
+
+  const toggle = document.getElementById(anchor)?.querySelector(VIEWED_TOGGLE_SELECTOR)
+  return toggle?.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === 'true'
+}
+
+// Marks a row and, for a directory, everything beneath it. We do not write the state
+// ourselves: we press the real per-file toggles that already own it, and let the observer
+// watching them paint the result back onto the tree.
+function setReviewedUnder(row: HTMLElement, anchors: string[], shouldBeViewed: boolean) {
   for (const anchor of anchors) {
-    const toggle = document
-      .getElementById(anchor)
-      ?.querySelector<HTMLButtonElement>(VIEWED_TOGGLE_SELECTOR)
-    if (!toggle) {
-      console.debug(LOG_PREFIX, 'No viewed toggle rendered for', anchor)
-      continue
-    }
+    pendingPresses.set(anchor, shouldBeViewed)
+  }
 
-    // Each click is a request to GitHub, so only press the toggles actually out of step.
-    if ((toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === 'true') === shouldBeViewed) {
-      continue
-    }
+  rowsAwaitingPresses.add(row)
+  row.setAttribute(PENDING_PRESSES_MARKER, 'true')
+  console.debug(LOG_PREFIX, `Queued ${anchors.length} viewed toggle(s) under ${row.id}`)
 
+  // Clearing a row's mark straight away is honest: the moment the first file is un-reviewed
+  // the row is no longer complete. Setting one early would not be, so a row being reviewed
+  // waits for its queue to land and the roll-up to confirm it. A collapsed directory needs
+  // this either way, having no mounted rows for the sweep to re-derive its state from.
+  if (!shouldBeViewed) {
+    applyViewedState(row, false)
+
+    if (row.matches(FILE_TREE_DIRECTORY_SELECTOR)) {
+      autoCollapsedDirectories.delete(row)
+      expandDirectory(row)
+    }
+  }
+
+  startDrainingPresses()
+}
+
+function startDrainingPresses() {
+  if (isDrainingPresses) {
+    return
+  }
+
+  isDrainingPresses = true
+  drainNextPress()
+}
+
+function drainNextPress() {
+  const [nextPress] = pendingPresses
+  if (!nextPress) {
+    isDrainingPresses = false
+
+    for (const row of rowsAwaitingPresses) {
+      row.removeAttribute(PENDING_PRESSES_MARKER)
+    }
+    rowsAwaitingPresses.clear()
+
+    // The roll-up sits out the drain, so hand it the one run that counts.
+    rollUpViewedDirectories()
+    return
+  }
+
+  const [anchor, shouldBeViewed] = nextPress
+  pendingPresses.delete(anchor)
+
+  const toggle = document
+    .getElementById(anchor)
+    ?.querySelector<HTMLButtonElement>(VIEWED_TOGGLE_SELECTOR)
+  if (!toggle) {
+    console.debug(LOG_PREFIX, 'No viewed toggle rendered for', anchor)
+  }
+  // Re-read the state now rather than trusting what it was when this was queued: the user may
+  // have pressed this file's own toggle in the meantime, and a click would undo their work.
+  else if ((toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === 'true') !== shouldBeViewed) {
     toggle.click()
-    pressed++
   }
 
-  console.debug(LOG_PREFIX, `Pressed ${pressed} of ${anchors.length} viewed toggle(s) under ${row.id}`)
-
-  // A collapsed directory has no mounted rows for the sweep to re-derive its state from, so
-  // record the row's own result here rather than wait for a recount that cannot happen.
-  applyViewedState(row, shouldBeViewed)
-
-  if (!shouldBeViewed && row.matches(FILE_TREE_DIRECTORY_SELECTOR)) {
-    autoCollapsedDirectories.delete(row)
-    expandDirectory(row)
-  }
+  window.setTimeout(drainNextPress, PRESS_INTERVAL_MS)
 }
 
 // A file row stands only for itself. A directory stands for every file whose path sits beneath
@@ -235,6 +301,13 @@ export function syncViewedRowForToggle(toggle: HTMLElement) {
 // Rolls the file marks up the tree: a directory whose every descendant file is viewed gets the
 // same checkmark, and folds itself away so what remains on screen is what is left to review.
 export function rollUpViewedDirectories() {
+  // While a queued batch is still landing, the tree is mid-transition: a folder would be
+  // judged incomplete on every press and complete on the last, flickering the whole way
+  // through. The drain runs one roll-up when it finishes, which is the only one that is true.
+  if (isDrainingPresses) {
+    return
+  }
+
   const directories = document.querySelectorAll<HTMLElement>(FILE_TREE_DIRECTORY_SELECTOR)
   if (!directories.length) {
     return

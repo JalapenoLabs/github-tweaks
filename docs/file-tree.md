@@ -34,8 +34,7 @@ row links to that same fragment.
 
 Pressing a row's checkmark clicks the real toggles in the diff column. Nothing here decides
 what "viewed" means; it only presses GitHub's buttons and lets the observer watching them
-paint the result back. Only toggles actually out of step are pressed, since each click is a
-request.
+paint the result back.
 
 A directory's button stands for every file beneath it, resolved through a **path map** rather
 than the DOM. This matters: a finished folder auto-collapses, Primer unmounts its rows, and
@@ -43,6 +42,30 @@ the whole point of clicking its green check is to undo it. Walking the DOM at th
 finds nothing. So every file path the tree has shown is kept mapped to its diff anchor, and a
 directory takes every path under `<its id>/`. Un-reviewing a directory also reopens it, since
 leaving it shut would hide the files the user just asked to read again.
+
+### Presses are paced
+
+Each press is a write to the same repository, and GitHub throttles bursts of those. A
+two-hundred file folder fired at once is a flood, so presses go through **one queue for the
+whole page at ten a second**. The first press goes out immediately, so a single file still
+feels instant.
+
+The queue is keyed by diff anchor, so the newest intent for a file replaces an older queued
+one rather than joining it. Each press also re-reads the toggle at the moment it goes out, and
+skips a file already in the wanted state. Together these mean a reversal costs nothing if it
+arrives before the press does: reviewing a six file folder and immediately un-reviewing one of
+them sends five writes, not seven.
+
+A click decides direction from where the row is **heading**, not the checkmark it currently
+shows. A press queued a moment ago has not painted yet, so reading the marker would take a
+user reversing their own last click as confirming it, and press the file twice into the same
+state.
+
+While a batch drains, the clicked row pulses and refuses another press, and the roll-up sits
+out entirely. Judging a folder on every press would call it incomplete all the way through and
+complete on the last one, flickering the whole time; the drain runs the single roll-up that is
+true when it finishes. The rows underneath still turn green one by one, which is the progress
+indicator.
 
 ## Why an attribute, and one injected node
 
