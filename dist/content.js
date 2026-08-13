@@ -5,6 +5,15 @@
   var RELOCATED_MARKER = "data-pr-enhancer-relocated";
   var PDF_PROCESSED_MARKER = "data-pr-enhancer-pdf";
   var HIDDEN_DIVIDER_MARKER = "data-pr-enhancer-divider-hidden";
+  var VIEWED_TREE_ROW_MARKER = "data-pr-enhancer-viewed";
+
+  // src/content/githubSelectors.ts
+  var DIFF_ENTRY_SELECTOR = '[class*="PullRequestDiffsList-module__diffEntry__"]';
+  var DIFF_REGION_SELECTOR = '[id^="diff-"]';
+  var DIFF_LINE_ROW_SELECTOR = "tr.diff-line-row";
+  var VIEWED_TOGGLE_SELECTOR = 'button[class*="MarkAsViewedButton-module__"]';
+  var VIEWED_TOGGLE_STATE_ATTRIBUTE = "aria-pressed";
+  var FILE_TREE_ROW_SELECTOR = '[role="treeitem"][class*="DiffFileTree-module__file-tree-row__"]';
 
   // src/content/mergePanel.ts
   var MERGE_PANEL_SELECTORS = ['[data-testid="mergebox-partial"]', "#partial-pull-merging"];
@@ -180,9 +189,137 @@
     return null;
   }
 
+  // src/content/diffPlaceholders.ts
+  var HEADER_HEIGHT_PX = 42;
+  var FALLBACK_ROW_HEIGHT_PX = 24;
+  var MIN_SHORTFALL_PX = 1e3;
+  var evaluatedReservations = /* @__PURE__ */ new WeakMap();
+  var measuredRowHeight = 0;
+  function reserveAccurateDiffHeights() {
+    const entries = document.querySelectorAll(DIFF_ENTRY_SELECTOR);
+    if (!entries.length) {
+      return;
+    }
+    const rowHeight = measureDiffRowHeight(entries);
+    const corrections = [];
+    for (const entry of entries) {
+      const reservedHeight = readReservedHeight(entry);
+      if (evaluatedReservations.get(entry) === reservedHeight) {
+        continue;
+      }
+      const rowCount = entry.querySelectorAll(DIFF_LINE_ROW_SELECTOR).length;
+      const renderedHeight = HEADER_HEIGHT_PX + rowCount * rowHeight;
+      if (!reservedHeight || !rowCount || renderedHeight - reservedHeight < MIN_SHORTFALL_PX) {
+        evaluatedReservations.set(entry, reservedHeight);
+        continue;
+      }
+      corrections.push({ entry, correctedHeight: renderedHeight });
+    }
+    for (const { entry, correctedHeight } of corrections) {
+      const reservation = `auto ${Math.round(correctedHeight)}px`;
+      entry.style.setProperty("contain-intrinsic-size", reservation);
+      evaluatedReservations.set(entry, Math.round(correctedHeight));
+      const region = entry.querySelector(DIFF_REGION_SELECTOR);
+      if (!region) {
+        console.debug(LOG_PREFIX, "A diff entry has no inner region to resize", entry);
+        continue;
+      }
+      region.style.setProperty("contain-intrinsic-size", reservation);
+      console.debug(LOG_PREFIX, `Reserved ${reservation} for ${region.id}`);
+    }
+  }
+  function readReservedHeight(entry) {
+    const lengths = entry.style.getPropertyValue("contain-intrinsic-size").match(/[\d.]+(?=px)/g);
+    if (!lengths) {
+      return 0;
+    }
+    return Number.parseFloat(lengths[lengths.length - 1]);
+  }
+  function measureDiffRowHeight(entries) {
+    if (measuredRowHeight) {
+      return measuredRowHeight;
+    }
+    for (const entry of entries) {
+      const row = entry.querySelector(DIFF_LINE_ROW_SELECTOR);
+      const height = row?.getBoundingClientRect().height ?? 0;
+      if (height) {
+        measuredRowHeight = height;
+        console.debug(LOG_PREFIX, `Calibrated the diff row height to ${height}px`);
+        return measuredRowHeight;
+      }
+    }
+    console.debug(LOG_PREFIX, "No rendered diff row to calibrate against yet; using the fallback height");
+    return FALLBACK_ROW_HEIGHT_PX;
+  }
+
+  // src/content/fileTreeViewedState.ts
+  var anchorsByRow = /* @__PURE__ */ new WeakMap();
+  function markViewedFilesInTree() {
+    const rows = document.querySelectorAll(FILE_TREE_ROW_SELECTOR);
+    if (!rows.length) {
+      return;
+    }
+    const viewedByAnchor = /* @__PURE__ */ new Map();
+    for (const toggle of document.querySelectorAll(VIEWED_TOGGLE_SELECTOR)) {
+      const region = toggle.closest(DIFF_REGION_SELECTOR);
+      if (!region) {
+        console.debug(LOG_PREFIX, "Found a viewed toggle outside any diff region", toggle);
+        continue;
+      }
+      viewedByAnchor.set(region.id, toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === "true");
+    }
+    for (const row of rows) {
+      const anchor = getRowAnchor(row);
+      const isViewed = anchor ? viewedByAnchor.get(anchor) : void 0;
+      if (isViewed !== void 0) {
+        applyViewedState(row, isViewed);
+      }
+    }
+  }
+  function syncViewedRowForToggle(toggle) {
+    const region = toggle.closest(DIFF_REGION_SELECTOR);
+    if (!region) {
+      console.debug(LOG_PREFIX, "A toggled viewed button sits outside any diff region", toggle);
+      return;
+    }
+    const row = document.querySelector(
+      `${FILE_TREE_ROW_SELECTOR}:has(a[href="#${region.id}"])`
+    );
+    if (!row) {
+      console.debug(LOG_PREFIX, "No file tree row links to", region.id);
+      return;
+    }
+    applyViewedState(row, toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === "true");
+  }
+  function applyViewedState(row, isViewed) {
+    if (row.hasAttribute(VIEWED_TREE_ROW_MARKER) === isViewed) {
+      return;
+    }
+    if (isViewed) {
+      row.setAttribute(VIEWED_TREE_ROW_MARKER, "true");
+      return;
+    }
+    row.removeAttribute(VIEWED_TREE_ROW_MARKER);
+  }
+  function getRowAnchor(row) {
+    const cached = anchorsByRow.get(row);
+    if (cached) {
+      return cached;
+    }
+    const link = row.querySelector('a[href^="#diff-"]');
+    const anchor = link?.getAttribute("href")?.slice(1);
+    if (!anchor) {
+      console.debug(LOG_PREFIX, "A file tree row has no link to a diff region", row);
+      return null;
+    }
+    anchorsByRow.set(row, anchor);
+    return anchor;
+  }
+
   // src/content/index.ts
   var PULL_CONVERSATION_PATTERN = /^\/[^/]+\/[^/]+\/pull\/\d+\/?$/;
   var PULL_FILES_PATTERN = /^\/[^/]+\/[^/]+\/pull\/\d+\/(files|changes)\/?$/;
+  var FILES_SCAN_INTERVAL_MS = 400;
   function runEnhancements() {
     const pathname = window.location.pathname;
     if (PULL_CONVERSATION_PATTERN.test(pathname)) {
@@ -191,8 +328,31 @@
       }
     }
     if (PULL_FILES_PATTERN.test(pathname)) {
-      renderPdfPreviews();
+      scheduleFilesScan();
     }
+  }
+  var lastFilesScanAt = 0;
+  var trailingFilesScan = 0;
+  function scheduleFilesScan() {
+    const sinceLastScan = performance.now() - lastFilesScanAt;
+    if (sinceLastScan >= FILES_SCAN_INTERVAL_MS) {
+      runFilesScan();
+      return;
+    }
+    if (!trailingFilesScan) {
+      trailingFilesScan = window.setTimeout(runFilesScan, FILES_SCAN_INTERVAL_MS - sinceLastScan);
+    }
+  }
+  function runFilesScan() {
+    window.clearTimeout(trailingFilesScan);
+    trailingFilesScan = 0;
+    lastFilesScanAt = performance.now();
+    if (!PULL_FILES_PATTERN.test(window.location.pathname)) {
+      return;
+    }
+    reserveAccurateDiffHeights();
+    markViewedFilesInTree();
+    renderPdfPreviews();
   }
   var scheduledFrame = 0;
   function scheduleRun() {
@@ -204,8 +364,20 @@
       runEnhancements();
     });
   }
-  var observer = new MutationObserver(scheduleRun);
-  observer.observe(document.body, { childList: true, subtree: true });
+  var structureObserver = new MutationObserver(scheduleRun);
+  structureObserver.observe(document.body, { childList: true, subtree: true });
+  var viewedObserver = new MutationObserver((records) => {
+    for (const record of records) {
+      if (record.target instanceof HTMLElement && record.target.matches(VIEWED_TOGGLE_SELECTOR)) {
+        syncViewedRowForToggle(record.target);
+      }
+    }
+  });
+  viewedObserver.observe(document.body, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: [VIEWED_TOGGLE_STATE_ATTRIBUTE]
+  });
   console.debug(LOG_PREFIX, "Content script initialized");
   runEnhancements();
 })();

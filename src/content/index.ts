@@ -7,14 +7,24 @@
 
 // Core
 import { LOG_PREFIX } from '../constants'
+import { VIEWED_TOGGLE_SELECTOR, VIEWED_TOGGLE_STATE_ATTRIBUTE } from './githubSelectors'
 
 // User interface
 import { relocateMergePanel, hideTrailingTimelineDivider } from './mergePanel'
 import { renderPdfPreviews } from './pdfPreview'
+import { reserveAccurateDiffHeights } from './diffPlaceholders'
+import { markViewedFilesInTree, syncViewedRowForToggle } from './fileTreeViewedState'
 
 const PULL_CONVERSATION_PATTERN = /^\/[^/]+\/[^/]+\/pull\/\d+\/?$/
 // The classic diff UI lives at /files; the modern React UI lives at /changes.
 const PULL_FILES_PATTERN = /^\/[^/]+\/[^/]+\/pull\/\d+\/(files|changes)\/?$/
+
+// The Files tab enhancements each sweep the whole diff column, which on a several-hundred
+// file pull request is a few milliseconds of tree walking. GitHub mutates that column
+// constantly while you interact with it, so sweeping once per mutation frame would itself
+// become a source of the jank we are here to remove. Files only appear as GitHub streams
+// more of the pull request in, so a lazier cadence costs nothing you can perceive.
+const FILES_SCAN_INTERVAL_MS = 400
 
 function runEnhancements() {
   const pathname = window.location.pathname
@@ -28,8 +38,40 @@ function runEnhancements() {
   }
 
   if (PULL_FILES_PATTERN.test(pathname)) {
-    renderPdfPreviews()
+    scheduleFilesScan()
   }
+}
+
+let lastFilesScanAt = 0
+let trailingFilesScan = 0
+
+function scheduleFilesScan() {
+  const sinceLastScan = performance.now() - lastFilesScanAt
+  if (sinceLastScan >= FILES_SCAN_INTERVAL_MS) {
+    runFilesScan()
+    return
+  }
+
+  // Always leave one run queued behind a burst, so the mutation arriving just inside the
+  // interval is swept a moment later rather than dropped.
+  if (!trailingFilesScan) {
+    trailingFilesScan = window.setTimeout(runFilesScan, FILES_SCAN_INTERVAL_MS - sinceLastScan)
+  }
+}
+
+function runFilesScan() {
+  window.clearTimeout(trailingFilesScan)
+  trailingFilesScan = 0
+  lastFilesScanAt = performance.now()
+
+  // A queued trailing scan can outlive a Turbo navigation away from the Files tab.
+  if (!PULL_FILES_PATTERN.test(window.location.pathname)) {
+    return
+  }
+
+  reserveAccurateDiffHeights()
+  markViewedFilesInTree()
+  renderPdfPreviews()
 }
 
 // Coalesce the flurry of mutations GitHub emits while streaming a page into a single run
@@ -47,8 +89,25 @@ function scheduleRun() {
   })
 }
 
-const observer = new MutationObserver(scheduleRun)
-observer.observe(document.body, { childList: true, subtree: true })
+const structureObserver = new MutationObserver(scheduleRun)
+structureObserver.observe(document.body, { childList: true, subtree: true })
+
+// Marking a file viewed flips `aria-pressed` on its toggle and nothing else we watch, so the
+// structural observer above never hears about it. Watching that one attribute lets the
+// sidebar answer on the spot rather than waiting out the scan interval, which is far too
+// slow to acknowledge a click the user just made.
+const viewedObserver = new MutationObserver((records) => {
+  for (const record of records) {
+    if (record.target instanceof HTMLElement && record.target.matches(VIEWED_TOGGLE_SELECTOR)) {
+      syncViewedRowForToggle(record.target)
+    }
+  }
+})
+viewedObserver.observe(document.body, {
+  subtree: true,
+  attributes: true,
+  attributeFilter: [VIEWED_TOGGLE_STATE_ATTRIBUTE]
+})
 
 console.debug(LOG_PREFIX, 'Content script initialized')
 runEnhancements()
