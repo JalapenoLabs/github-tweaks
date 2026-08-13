@@ -21,6 +21,110 @@
 }
 
 /* ------------------------------------------------------------------------------------
+   Floating dock on the conversation tab
+
+   Appears once the top of the page scrolls away, offering the merge action and a way back up
+   without hunting for either. The merge button mirrors the real one in the merge box; see
+   mergeDock.ts for why it proxies rather than reimplements.
+   ------------------------------------------------------------------------------------ */
+
+/* Pinned to the top of the document so an IntersectionObserver can report whether the page
+   is scrolled, which keeps that question off the scroll path entirely. */
+.pr-enhancer-scroll-sentinel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pr-enhancer-dock {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* `display: flex` above outranks the default styling of the `hidden` attribute, so the dock
+   needs to be told again. */
+.pr-enhancer-dock[hidden],
+.pr-enhancer-dock-button[hidden] {
+  display: none;
+}
+
+.pr-enhancer-dock-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--fgColor-default, #1f2328);
+  cursor: pointer;
+  background-color: var(--bgColor-default, #ffffff);
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 6px;
+  box-shadow: 0 3px 8px rgb(31 35 40 / 24%);
+}
+
+.pr-enhancer-dock-button::before {
+  width: 16px;
+  height: 16px;
+  content: '';
+  background-color: currentcolor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.pr-enhancer-dock-button:hover:not(:disabled) {
+  background-color: var(--bgColor-muted, #f6f8fa);
+}
+
+.pr-enhancer-dock-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.pr-enhancer-dock-back-to-top::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.47 7.78a.75.75 0 0 1 0-1.06l4-4a.75.75 0 0 1 1.06 0l4 4a.751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018L8.75 4.81v7.44a.75.75 0 0 1-1.5 0V4.81L4.53 7.78a.75.75 0 0 1-1.06 0Z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.47 7.78a.75.75 0 0 1 0-1.06l4-4a.75.75 0 0 1 1.06 0l4 4a.751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018L8.75 4.81v7.44a.75.75 0 0 1-1.5 0V4.81L4.53 7.78a.75.75 0 0 1-1.06 0Z'/%3E%3C/svg%3E");
+}
+
+/* Green to match the real merge button it stands for, so the dock never looks like a
+   different, safer action than the one it forwards to. */
+.pr-enhancer-dock-merge {
+  color: var(--fgColor-onEmphasis, #ffffff);
+  background-color: var(--bgColor-success-emphasis, #1f883d);
+  border-color: var(--borderColor-success-emphasis, #1f883d);
+}
+
+.pr-enhancer-dock-merge:hover:not(:disabled) {
+  background-color: var(--bgColor-success-emphasis, #1f883d);
+  filter: brightness(0.94);
+}
+
+.pr-enhancer-dock-merge:disabled {
+  color: var(--fgColor-onEmphasis, #ffffff);
+  background-color: var(--bgColor-neutral-emphasis, #59636e);
+  border-color: transparent;
+}
+
+.pr-enhancer-dock-merge::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z'/%3E%3C/svg%3E");
+}
+
+/* ------------------------------------------------------------------------------------
    File tree: skip rows that are scrolled out of the sidebar
 
    GitHub virtualizes the diff column but not the sidebar beside it, so a 400-file pull

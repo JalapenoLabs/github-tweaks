@@ -28,3 +28,22 @@ export const VIEWED_TOGGLE_STATE_ATTRIBUTE = 'aria-pressed'
 // one, which matters: a directory row contains its children, so it must never be size
 // contained or marked viewed.
 export const FILE_TREE_ROW_SELECTOR = '[role="treeitem"][class*="DiffFileTree-module__file-tree-row__"]'
+
+// The merge box on the conversation tab. The first selector is the modern React UI, the
+// second the classic markup kept as a fallback.
+export const MERGE_PANEL_SELECTORS = ['[data-testid="mergebox-partial"]', '#partial-pull-merging']
+
+// The merge action itself is the first button of the one Primer button group inside the merge
+// box; the second slot in that group holds the dropdown for picking a different merge method.
+// Scoping this tightly matters, because "Close pull request" is a button too. It sits outside
+// the merge box, and this selector must never reach it.
+export const MERGE_BUTTON_GROUP_SELECTOR = '[data-component="ButtonGroup"]'
+
+// Primer nests a button's visible label rather than leaving it as the button's own text, and
+// wraps it across lines, so read this and collapse the whitespace.
+export const BUTTON_LABEL_SELECTOR = '[data-component="text"]'
+
+// Primer disables a button with `aria-disabled` rather than the `disabled` property, so the
+// control stays focusable and can still explain itself. Reading `.disabled` reports false on
+// a button that plainly is not clickable.
+export const ARIA_DISABLED_ATTRIBUTE = 'aria-disabled'

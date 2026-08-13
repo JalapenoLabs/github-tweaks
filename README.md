@@ -17,6 +17,10 @@ A small Chrome extension (Manifest V3, TypeScript) that improves GitHub pull req
 4. **Viewed files marked in the sidebar.** Each file's "Viewed" toggle is mirrored onto its
    row in the file tree as a checkmark and a faded name, so review progress is visible without
    scrolling the diff column to find it.
+5. **A floating dock on the conversation tab.** Scroll down and two buttons pin themselves to
+   the bottom left: "Back to top", and the pull request's merge action. The merge button is a
+   proxy: it copies the real button's label, disabled state and blocked reason, and clicking
+   it clicks the real one, which expands GitHub's usual commit message confirmation.
 
 ## Build
 
@@ -54,6 +58,8 @@ re-applies its changes idempotently whenever the DOM updates.
 
 ## Documentation
 
+- [docs/conversation-tab.md](docs/conversation-tab.md) — the relocated merge panel and the
+  floating dock
 - [docs/performance.md](docs/performance.md) — why large pull requests stutter and what the
   extension does about it
 - [docs/file-tree.md](docs/file-tree.md) — the sidebar: viewed markers and row skipping

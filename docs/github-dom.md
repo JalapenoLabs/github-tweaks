@@ -32,6 +32,19 @@ Viewed" in English and is localized elsewhere; `aria-pressed` is not.
 
 Both the wrapper and the region carry their own `content-visibility` placeholder.
 
+### Merge box (conversation tab)
+
+| Thing | How to find it |
+| --- | --- |
+| Merge box | `[data-testid="mergebox-partial"]`, or `#partial-pull-merging` on the classic UI |
+| Merge action | first `button` inside `[data-component="ButtonGroup"]` **inside the merge box** |
+| Its label | `[data-component="text"]` inside the button, wrapped across lines |
+| Blocked | `aria-disabled="true"` on the button, never the `disabled` property |
+| Why blocked | the group's `aria-describedby` points at the tooltip holding the reason |
+
+The merge action must stay scoped to the button group inside the merge box. "Close pull
+request" is a button on the same page, outside it.
+
 ### File tree sidebar
 
 | Thing | How to find it |
@@ -52,14 +65,15 @@ to that fragment.
 
 ## Recapturing a sample
 
-Open a large pull request's **Files changed** tab, let it finish streaming, then in the
-browser console:
+Open the tab you need (the **Files changed** tab for the diff and sidebar contract, the
+conversation tab for the merge box), let it finish streaming, then in the browser console:
 
 ```js
 copy(document.documentElement.outerHTML)
 ```
 
-Save it in the repository root as `huge-pr-sample.html`.
+Save it in the repository root. `sample.html` is the conversation page and
+`huge-pr-sample.html` a several-hundred file diff.
 
 **The capture contains the full source of whatever pull request it came from.** `.gitignore`
 excludes `*sample*.html` for that reason. Never commit one, and never publish one from a
@@ -80,6 +94,21 @@ document.querySelectorAll(FILE_TREE_ROW_SELECTOR).length  // expect one per file
 
 Run node with `--max-old-space-size=8192`; the captures run to tens of megabytes.
 
+The built bundle can also be run whole, which catches load-time crashes and lets you assert on
+what it produced. Stub `chrome` and `IntersectionObserver`, and construct the DOM with the
+`url` of the page you captured, since the script routes on `location.pathname`:
+
+```js
+const dom = new JSDOM(readFileSync('sample.html', 'utf8'), {
+  url: 'https://github.com/owner/repo/pull/63',
+  runScripts: 'outside-only',
+  pretendToBeVisual: true
+})
+dom.window.chrome = { runtime: { getURL: (path) => path } }
+dom.window.IntersectionObserver = class { /* capture the callback and fire it by hand */ }
+dom.window.eval(readFileSync('dist/content.js', 'utf8'))
+```
+
 What this cannot check: jsdom has no layout engine, so every `getBoundingClientRect` returns
-zero and `content-visibility` does nothing. Height measurement and the rendering wins have to
-be confirmed in Chrome.
+zero, `content-visibility` does nothing, and `scrollIntoView` is missing entirely. Height
+measurement, scrolling and the rendering wins have to be confirmed in Chrome.

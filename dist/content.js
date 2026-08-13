@@ -14,9 +14,12 @@
   var VIEWED_TOGGLE_SELECTOR = 'button[class*="MarkAsViewedButton-module__"]';
   var VIEWED_TOGGLE_STATE_ATTRIBUTE = "aria-pressed";
   var FILE_TREE_ROW_SELECTOR = '[role="treeitem"][class*="DiffFileTree-module__file-tree-row__"]';
+  var MERGE_PANEL_SELECTORS = ['[data-testid="mergebox-partial"]', "#partial-pull-merging"];
+  var MERGE_BUTTON_GROUP_SELECTOR = '[data-component="ButtonGroup"]';
+  var BUTTON_LABEL_SELECTOR = '[data-component="text"]';
+  var ARIA_DISABLED_ATTRIBUTE = "aria-disabled";
 
   // src/content/mergePanel.ts
-  var MERGE_PANEL_SELECTORS = ['[data-testid="mergebox-partial"]', "#partial-pull-merging"];
   var DISCUSSION_SELECTOR = ".js-discussion";
   var TIMELINE_PARTIAL_SELECTOR = '[data-partial-name="pullRequestsConversationsRoute.Timeline"]';
   var TIMELINE_DIVIDER_SELECTOR = ".discussion-timeline-actions";
@@ -59,6 +62,120 @@
     lastDivider.setAttribute(HIDDEN_DIVIDER_MARKER, "true");
     lastDivider.style.display = "none";
     console.debug(LOG_PREFIX, "Hid the trailing empty discussion-timeline-actions divider");
+  }
+
+  // src/content/mergeDock.ts
+  var BACK_TO_TOP_LABEL = "Back to top";
+  var dock = null;
+  var isOnConversationPage = false;
+  var isPageScrolledToTop = true;
+  function ensureMergeDock() {
+    isOnConversationPage = true;
+    if (dock && (!dock.container.isConnected || !dock.sentinel.isConnected)) {
+      dock.scrollObserver.disconnect();
+      dock.container.remove();
+      dock.sentinel.remove();
+      dock = null;
+    }
+    if (!dock) {
+      dock = buildDock();
+    }
+    syncMergeButton(dock);
+    refreshDockVisibility();
+  }
+  function hideMergeDock() {
+    isOnConversationPage = false;
+    refreshDockVisibility();
+  }
+  function refreshDockVisibility() {
+    if (!dock) {
+      return;
+    }
+    dock.container.hidden = !isOnConversationPage || isPageScrolledToTop;
+  }
+  function buildDock() {
+    const container = document.createElement("div");
+    container.className = "pr-enhancer-dock";
+    container.hidden = true;
+    const backToTop = document.createElement("button");
+    backToTop.type = "button";
+    backToTop.className = "pr-enhancer-dock-button pr-enhancer-dock-back-to-top";
+    backToTop.textContent = BACK_TO_TOP_LABEL;
+    backToTop.addEventListener("click", () => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    const merge = document.createElement("button");
+    merge.type = "button";
+    merge.className = "pr-enhancer-dock-button pr-enhancer-dock-merge";
+    merge.addEventListener("click", forwardClickToMergeButton);
+    container.append(backToTop, merge);
+    document.body.appendChild(container);
+    const sentinel = document.createElement("div");
+    sentinel.className = "pr-enhancer-scroll-sentinel";
+    document.body.prepend(sentinel);
+    const scrollObserver = new IntersectionObserver((entries) => {
+      isPageScrolledToTop = entries[entries.length - 1].isIntersecting;
+      refreshDockVisibility();
+    });
+    scrollObserver.observe(sentinel);
+    return { container, merge, sentinel, scrollObserver };
+  }
+  function forwardClickToMergeButton() {
+    const panel = findMergePanel();
+    const mergeButton = findMergeButton();
+    if (!panel || !mergeButton) {
+      console.debug(LOG_PREFIX, "The merge button went away before the dock could forward a click");
+      return;
+    }
+    mergeButton.click();
+    window.requestAnimationFrame(() => {
+      panel.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
+  function syncMergeButton(currentDock) {
+    const mergeButton = findMergeButton();
+    if (!mergeButton) {
+      currentDock.merge.hidden = true;
+      return;
+    }
+    currentDock.merge.hidden = false;
+    const label = mergeButton.querySelector(BUTTON_LABEL_SELECTOR)?.textContent?.replace(/\s+/g, " ").trim();
+    if (!label) {
+      console.debug(LOG_PREFIX, "The merge button has no readable label", mergeButton);
+    } else if (currentDock.merge.textContent !== label) {
+      currentDock.merge.textContent = label;
+    }
+    const isDisabled = mergeButton.getAttribute(ARIA_DISABLED_ATTRIBUTE) === "true" || mergeButton.disabled;
+    if (currentDock.merge.disabled !== isDisabled) {
+      currentDock.merge.disabled = isDisabled;
+    }
+    const reason = isDisabled ? readBlockedReason(mergeButton) : "";
+    if (currentDock.merge.title !== reason) {
+      currentDock.merge.title = reason;
+    }
+  }
+  function readBlockedReason(mergeButton) {
+    const describedBy = mergeButton.closest(MERGE_BUTTON_GROUP_SELECTOR)?.getAttribute("aria-describedby");
+    if (!describedBy) {
+      return "";
+    }
+    return document.getElementById(describedBy)?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+  }
+  function findMergePanel() {
+    for (const selector of MERGE_PANEL_SELECTORS) {
+      const panel = document.querySelector(selector);
+      if (panel) {
+        return panel;
+      }
+    }
+    return null;
+  }
+  function findMergeButton() {
+    const group = findMergePanel()?.querySelector(MERGE_BUTTON_GROUP_SELECTOR);
+    if (!group) {
+      return null;
+    }
+    return group.querySelector("button");
   }
 
   // src/content/pdfPreview.ts
@@ -326,6 +443,9 @@
       if (relocateMergePanel()) {
         hideTrailingTimelineDivider();
       }
+      ensureMergeDock();
+    } else {
+      hideMergeDock();
     }
     if (PULL_FILES_PATTERN.test(pathname)) {
       scheduleFilesScan();

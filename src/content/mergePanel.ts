@@ -11,10 +11,8 @@
 // the timeline keeps everything aligned.
 
 import { LOG_PREFIX, RELOCATED_MARKER, HIDDEN_DIVIDER_MARKER } from '../constants'
+import { MERGE_PANEL_SELECTORS } from './githubSelectors'
 
-// GitHub's modern React/Primer UI exposes the merge box via a test id; the first selector
-// that follows is the classic (pre-React) markup, kept as a fallback.
-const MERGE_PANEL_SELECTORS = ['[data-testid="mergebox-partial"]', '#partial-pull-merging']
 const DISCUSSION_SELECTOR = '.js-discussion'
 const TIMELINE_PARTIAL_SELECTOR = '[data-partial-name="pullRequestsConversationsRoute.Timeline"]'
 const TIMELINE_DIVIDER_SELECTOR = '.discussion-timeline-actions'

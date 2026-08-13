@@ -11,6 +11,7 @@ import { VIEWED_TOGGLE_SELECTOR, VIEWED_TOGGLE_STATE_ATTRIBUTE } from './githubS
 
 // User interface
 import { relocateMergePanel, hideTrailingTimelineDivider } from './mergePanel'
+import { ensureMergeDock, hideMergeDock } from './mergeDock'
 import { renderPdfPreviews } from './pdfPreview'
 import { reserveAccurateDiffHeights } from './diffPlaceholders'
 import { markViewedFilesInTree, syncViewedRowForToggle } from './fileTreeViewedState'
@@ -35,6 +36,10 @@ function runEnhancements() {
     if (relocateMergePanel()) {
       hideTrailingTimelineDivider()
     }
+    ensureMergeDock()
+  }
+  else {
+    hideMergeDock()
   }
 
   if (PULL_FILES_PATTERN.test(pathname)) {
