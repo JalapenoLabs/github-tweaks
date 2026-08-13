@@ -1,70 +1,105 @@
+<div align="center">
+
+<img src="icons/icon-128.png" width="96" height="96" alt="">
+
 # GitHub PR Enhancer
 
-A small Chrome extension (Manifest V3, TypeScript) that improves GitHub pull request pages:
+**Make big pull requests reviewable again.**
 
-1. **Merge panel on top.** On a pull request's Conversation tab, the squash/merge panel is
-   moved from the bottom of the page to just above the discussion timeline, so you can merge
-   without scrolling past every comment.
-2. **Inline PDF diffs.** On the Files changed tab, PDF files that GitHub renders as
-   `Binary file not shown` are replaced with an inline preview of the new version of the
-   file, plus an "Open PDF in new tab" link. Works for private repositories too.
-3. **Scrolling that survives a 400-file review.** GitHub reserves a placeholder for each
-   off-screen file, but sometimes gets the size badly wrong: one captured `yarn.lock` entry
-   reserves 175px for roughly 49,000px of content. The document then lurches by tens of
-   thousands of pixels whenever that file passes the viewport. The extension measures what is
-   really there and reserves honestly. It also lets the browser skip file tree rows scrolled
-   out of the sidebar, which GitHub does not virtualize at all.
-4. **Review from the sidebar.** Each file's "Viewed" toggle is mirrored onto its row in the
-   file tree as a checkmark and a faded name, so progress is visible without scrolling the
-   diff column to find it. Hover any row and the checkmark appears in yellow: press it to mark
-   that file reviewed, or a whole folder and everything under it. Press a green one to undo.
-   A folder whose every descendant is viewed checks itself and folds away, upwards as far as
-   the review is finished, leaving only what is left to read.
-5. **A floating dock on the conversation tab.** Scroll down and two buttons pin themselves to
-   the bottom left: "Back to top", and the pull request's merge action. The merge button is a
-   proxy: it copies the real button's label, disabled state and blocked reason, and clicking
-   it clicks the real one, which expands GitHub's usual commit message confirmation.
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue.svg)](manifest.json)
 
-## Build
+</div>
 
-```bash
-npm install
-npm run build      # outputs the loadable extension into ./dist
-npm run watch      # rebuild on change while developing
-npm run typecheck  # tsc --noEmit
-```
+---
 
-## Load it into Chrome
+A 400-file pull request should not fight you. This extension fixes the parts of GitHub's
+review UI that fall apart at scale: scrolling that stutters, a sidebar that forgets what you
+have read, a merge button buried under a thousand comments, and PDFs that will not render.
 
-1. Run `npm run build`.
-2. Open `chrome://extensions`.
-3. Enable **Developer mode** (top right).
-4. Click **Load unpacked** and select the `dist/` folder.
-5. Open any pull request, for example a Conversation page or its **Files changed** tab.
+No account, no servers, no analytics. It runs entirely in your tab.
 
-After editing the source, run `npm run build` again (or keep `npm run watch` running) and
-press the reload icon on the extension card in `chrome://extensions`.
+## What it does
 
-## How it works
+### Scrolling stops stuttering
 
-- `src/content` is the content script injected into `github.com`. It relocates the merge
-  panel, swaps PDF placeholders for an iframe pointing at the extension's own viewer, and
-  repairs the rendering placeholders on the Files changed tab.
-- `src/content/githubSelectors.ts` holds every selector the script matches, so a GitHub
-  redesign has one file to repair.
-- `src/viewer` is an extension-origin page. Running outside the github.com origin lets it
-  fetch the raw PDF bytes (with your GitHub session cookies, so private repos work) and feed
-  them to Chrome's native PDF viewer, sidestepping github.com's Content-Security-Policy.
+GitHub reserves a placeholder for every file scrolled out of view, then sometimes gets the
+size badly wrong. On one real review, a `yarn.lock` entry reserved **175 pixels for roughly
+49,000 pixels** of content. Every time it drifted past the viewport the page grew by 49,000
+pixels in a single frame, then collapsed again on the way back. That is the lurch you feel,
+and it is why checking a box can throw you somewhere else entirely.
 
-GitHub renders pull requests as a Turbo-driven single-page app, so the content script
-re-applies its changes idempotently whenever the DOM updates.
+The extension measures what is really there and reserves honestly. It also lets the browser
+skip file tree rows scrolled out of the sidebar, which GitHub does not do at all.
 
-## Documentation
+### Track your review from the sidebar
 
-- [docs/conversation-tab.md](docs/conversation-tab.md) — the relocated merge panel and the
-  floating dock
-- [docs/performance.md](docs/performance.md) — why large pull requests stutter and what the
-  extension does about it
-- [docs/file-tree.md](docs/file-tree.md) — the sidebar: viewed markers and row skipping
-- [docs/github-dom.md](docs/github-dom.md) — the GitHub DOM contract, how to recapture a page
-  sample, and how to verify selectors without a browser
+Every file's "Viewed" state appears on its row in the file tree, so progress is visible at a
+glance instead of requiring a scroll through the diff to find out.
+
+<img src="screenshots/checkmarks.png" width="330" alt="File tree rows showing green checkmarks beside reviewed files">
+
+Hover any row and a yellow checkmark appears: press it to mark that file reviewed, or press a
+folder's to mark everything inside it. Press a green one to undo.
+
+<img src="screenshots/checkmarks-2.png" width="330" alt="A folder of five files, all marked reviewed">
+
+### Finished folders fold themselves away
+
+When every file under a folder is reviewed, the folder checks itself and collapses, upwards as
+far as the review is finished. What stays on screen is what is left to read.
+
+### Merge without scrolling to the bottom
+
+The merge panel moves to the top of the conversation, above the discussion instead of below
+all of it. Scroll down and a dock appears in the bottom left with **Back to top** and your
+repository's merge action, whether that is squash, rebase, or a merge commit.
+
+<img src="screenshots/squash-and-merge-on-bottom.png" width="640" alt="A pull request conversation with the merge panel moved to the top">
+
+The dock's merge button is a proxy: it mirrors the real button's label and its disabled state,
+and pressing it presses the real one. GitHub's usual commit message confirmation still
+follows, so nothing merges behind your back.
+
+### PDFs render inline
+
+PDF files that GitHub shows as `Binary file not shown.` are replaced with an inline preview of
+the new version, plus a link to open it in a tab. Private repositories included.
+
+## Install
+
+From the Chrome Web Store, or load it yourself:
+
+1. Download the latest release, or clone this repository and run `npm install && npm run build`.
+2. Open `chrome://extensions` and turn on **Developer mode**.
+3. Choose **Load unpacked** and select the `dist` folder.
+
+Requires Chrome 120 or newer.
+
+## Privacy
+
+The extension collects nothing, stores nothing, and sends nothing anywhere. It has no servers
+and no analytics.
+
+It requests access to `github.com` because that is where it runs, and to
+`*.githubusercontent.com` because GitHub redirects raw file downloads there, which is what
+makes the inline PDF preview work. Nothing else.
+
+Full detail in [PRIVACY.md](PRIVACY.md).
+
+## Support
+
+Found a bug, or has GitHub changed something the extension no longer recognises?
+[Open an issue](https://github.com/JalapenoLabs/github-tweaks/issues).
+
+## Contributing
+
+Build instructions, architecture, and how to test against a captured GitHub page are in
+[DEVELOPER.md](DEVELOPER.md).
+
+## License
+
+[MIT](LICENSE). Copyright © 2026 Alex Navarro, Jalapeno Labs.
+
+Not affiliated with, endorsed by, or sponsored by GitHub, Inc. "GitHub" is a trademark of
+GitHub, Inc., used here only to describe what this extension works with.

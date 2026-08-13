@@ -1,7 +1,9 @@
 node_modules/
 *.log
 
+# Store upload archives, rebuilt on demand by `npm run package`.
+*.zip
+
 # Captured GitHub page dumps used to derive selectors. These contain the full source of
 # whatever pull request they were taken from, so they must never be committed.
 *sample*.html
-huge-pr-sample.html

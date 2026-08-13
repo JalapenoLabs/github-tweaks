@@ -2,10 +2,18 @@
   "manifest_version": 3,
   "name": "GitHub PR Enhancer",
   "version": "1.0.0",
-  "description": "Moves the merge panel to the top of pull requests and renders PDF diffs inline.",
+  "description": "Smooth scrolling on huge pull requests, review tracking in the file tree, a merge shortcut, and inline PDF diffs.",
+  "author": "Alex Navarro",
+  "homepage_url": "https://github.com/JalapenoLabs/github-tweaks",
+  "minimum_chrome_version": "120",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "host_permissions": [
     "https://github.com/*",
-    "https://*.github.com/*",
     "https://*.githubusercontent.com/*"
   ],
   "content_scripts": [

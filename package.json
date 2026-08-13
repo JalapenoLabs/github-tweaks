@@ -1,17 +1,44 @@
 {
   "name": "github-pr-enhancer",
   "version": "1.0.0",
-  "description": "Moves the merge panel to the top of GitHub pull requests and renders PDF diffs inline.",
-  "private": true,
+  "description": "Chrome extension that makes large GitHub pull requests reviewable: smooth scrolling, review tracking in the file tree, a merge shortcut, and inline PDF diffs.",
   "type": "module",
+  "private": true,
+  "license": "MIT",
+  "author": {
+    "name": "Alex Navarro",
+    "email": "alex@jalapenolabs.io",
+    "url": "https://jalapenolabs.io"
+  },
+  "homepage": "https://github.com/JalapenoLabs/github-tweaks#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JalapenoLabs/github-tweaks.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JalapenoLabs/github-tweaks/issues"
+  },
+  "keywords": [
+    "chrome-extension",
+    "github",
+    "pull-request",
+    "code-review",
+    "performance"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "node build.mjs",
     "watch": "node build.mjs --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "icons": "node tools/generate-icons.mjs",
+    "package": "npm run build && node tools/package-extension.mjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.268",
     "esbuild": "^0.21.5",
+    "jsdom": "^24.1.0",
     "typescript": "^5.5.4"
   }
 }

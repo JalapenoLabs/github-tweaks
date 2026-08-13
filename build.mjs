@@ -12,12 +12,14 @@ const isWatch = process.argv.includes('--watch')
 const staticAssets = [
   ['manifest.json', `${OUT_DIR}/manifest.json`],
   ['src/content/content.css', `${OUT_DIR}/content.css`],
-  ['src/viewer/viewer.html', `${OUT_DIR}/viewer.html`]
+  ['src/viewer/viewer.html', `${OUT_DIR}/viewer.html`],
+  // Regenerate these with `npm run icons`; they are committed so a build needs no image tools.
+  ['icons', `${OUT_DIR}/icons`]
 ]
 
 async function copyStaticAssets() {
   await Promise.all(
-    staticAssets.map(([source, destination]) => cp(source, destination))
+    staticAssets.map(([source, destination]) => cp(source, destination, { recursive: true }))
   )
 }
 
