@@ -35,27 +35,30 @@ skip file tree rows scrolled out of the sidebar, which GitHub does not do at all
 ### Track your review from the sidebar
 
 Every file's "Viewed" state appears on its row in the file tree, so progress is visible at a
-glance instead of requiring a scroll through the diff to find out.
+glance instead of requiring a scroll through the diff to find out. Hover any row and a yellow
+checkmark appears: press it to mark that file reviewed, or press a folder's to mark everything
+inside it. Press a green one to undo.
 
-<img src="screenshots/checkmarks.png" width="330" alt="File tree rows showing green checkmarks beside reviewed files">
-
-Hover any row and a yellow checkmark appears: press it to mark that file reviewed, or press a
-folder's to mark everything inside it. Press a green one to undo.
-
-<img src="screenshots/checkmarks-2.png" width="330" alt="A folder of five files, all marked reviewed">
+![The file tree sidebar with green checkmarks beside reviewed files, a yellow checkmark under the pointer, and a finished folder already collapsed](screenshots/checkmarks.png)
 
 ### Finished folders fold themselves away
 
 When every file under a folder is reviewed, the folder checks itself and collapses, upwards as
-far as the review is finished. What stays on screen is what is left to read.
+far as the review is finished. What stays on screen is what is left to read. Above, `api` has
+folded away under its own checkmark while `components` and `lib` are still being worked
+through.
 
 ### Merge without scrolling to the bottom
 
-The merge panel moves to the top of the conversation, above the discussion instead of below
-all of it. Scroll down and a dock appears in the bottom left with **Back to top** and your
-repository's merge action, whether that is squash, rebase, or a merge commit.
+The merge panel moves to the top of the conversation, above the discussion instead of below all
+of it.
 
-<img src="screenshots/squash-and-merge-on-bottom.png" width="640" alt="A pull request conversation with the merge panel moved to the top">
+![A pull request conversation with the merge panel sitting above the description](screenshots/squash-and-merge-on-gtop.png)
+
+Scroll down and a dock appears in the bottom left with **Back to top** and your repository's
+merge action, whether that is squash, rebase, or a merge commit.
+
+<img src="screenshots/back-to-top.png" width="380" alt="A floating dock with Back to top and Squash and merge buttons">
 
 The dock's merge button is a proxy: it mirrors the real button's label and its disabled state,
 and pressing it presses the real one. GitHub's usual commit message confirmation still
