@@ -1,0 +1,8 @@
+{
+  "name": "@jalapenolabs/demo-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Example sources used to demonstrate the file tree. Not built, not shipped.",
+  "type": "module",
+  "main": "src/index.ts"
+}
