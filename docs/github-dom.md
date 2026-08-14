@@ -21,16 +21,41 @@ Viewed" in English and is localized elsewhere; `aria-pressed` is not.
 
 ## The contract
 
+### Where the Files UI lives
+
+Both the classic `/files` and the modern `/changes` view can be narrowed to a single commit or
+to a range, by appending them to the path:
+
+```
+/owner/repo/pull/89/changes
+/owner/repo/pull/89/changes/<sha>
+/owner/repo/pull/89/files/<sha>..<sha>
+```
+
+All of them serve the same DOM, so the route pattern has to accept the suffix or the extension
+simply never runs there.
+
 ### Diff column
 
 | Thing | How to find it |
 | --- | --- |
 | Per-file wrapper | `[class*="PullRequestDiffsList-module__diffEntry__"]` |
-| File region | `[id^="diff-"]`, id is `diff-<sha of the file path>` |
+| File region | `[id^="diff-"]` **inside a wrapper**, id is `diff-<sha of the file path>` |
 | Diff line | `tr.diff-line-row` |
 | Viewed toggle | `button[class*="MarkAsViewedButton-module__"]`, state on `aria-pressed` |
 
-Both the wrapper and the region carry their own `content-visibility` placeholder.
+Both the wrapper and the region carry their own `content-visibility` placeholder, though only
+on comparisons big enough for GitHub to bother; a nine file commit view has none.
+
+**`[id^="diff-"]` alone is not a file.** The page also carries `diff-comparison-viewer-container`,
+`diff-file-tree-filter` and `diff-placeholder`, none of which are files. Scope to a wrapper.
+
+**The diff header is display text, not data.** It ellipsises a long path down to
+`…/common/getUniqueDestinationPath.ts` and spells a rename as `old → new`. On a captured
+review, 105 of 397 headers do not yield a usable path. `table[aria-label]` is not ellipsised
+and is therefore better, but it only exists for files whose diff body has rendered: 292 of 397
+on the same page, and 4 of 9 on a commit view. **There is no complete, reliable list of file
+paths in the diff column.** The sidebar's row ids are the only trustworthy source.
 
 ### Merge box (conversation tab)
 

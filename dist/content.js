@@ -10,6 +10,7 @@
   var REVIEW_LABEL = "Mark reviewed";
   var UNREVIEW_LABEL = "Mark unreviewed";
   var PENDING_PRESSES_MARKER = "data-pr-enhancer-pending";
+  var DIRECTIONAL_MARKS_PATTERN = /[‎‏‪-‮⁦-⁩]/g;
 
   // src/content/githubSelectors.ts
   var DIFF_ENTRY_SELECTOR = '[class*="PullRequestDiffsList-module__diffEntry__"]';
@@ -189,7 +190,6 @@
   // src/content/pdfPreview.ts
   var BINARY_NOTICE_TEXT = "Binary file not shown.";
   var PREVIEW_HEIGHT_PX = 800;
-  var DIRECTIONAL_MARKS_PATTERN = /[‎‏‪-‮⁦-⁩]/g;
   function renderPdfPreviews() {
     const noticeElements = document.querySelectorAll("[data-diff-anchor]");
     for (const notice of noticeElements) {
@@ -378,14 +378,98 @@
   }
 
   // src/content/fileTreeViewedState.ts
-  var anchorsByRow = /* @__PURE__ */ new WeakMap();
   var anchorsByFilePath = /* @__PURE__ */ new Map();
-  var cachedTreePathname = "";
+  var pathsByAnchor = /* @__PURE__ */ new Map();
+  var indexedPathname = "";
+  var SETTLED_PASSES_BEFORE_ROLLUP = 2;
+  var lastIndexSize = -1;
+  var settledPasses = 0;
   var autoCollapsedDirectories = /* @__PURE__ */ new WeakSet();
   var PRESS_INTERVAL_MS = 100;
   var pendingPresses = /* @__PURE__ */ new Map();
   var rowsAwaitingPresses = /* @__PURE__ */ new Set();
   var isDrainingPresses = false;
+  function syncReviewStateToTree() {
+    indexTreeRows();
+    const viewedByAnchor = readViewedState();
+    for (const row of document.querySelectorAll(FILE_TREE_ROW_SELECTOR)) {
+      const anchor = anchorsByFilePath.get(row.id);
+      if (!anchor) {
+        continue;
+      }
+      applyViewedState(row, viewedByAnchor.get(anchor) === true);
+    }
+    rollUpViewedDirectories(viewedByAnchor);
+  }
+  function indexTreeRows() {
+    if (indexedPathname !== window.location.pathname) {
+      anchorsByFilePath.clear();
+      pathsByAnchor.clear();
+      indexedPathname = window.location.pathname;
+      lastIndexSize = -1;
+      settledPasses = 0;
+    }
+    for (const row of document.querySelectorAll(FILE_TREE_ROW_SELECTOR)) {
+      if (anchorsByFilePath.has(row.id)) {
+        continue;
+      }
+      const anchor = row.querySelector('a[href^="#diff-"]')?.getAttribute("href")?.slice(1);
+      if (!anchor) {
+        console.debug(LOG_PREFIX, "A file tree row has no link to a diff region", row.id);
+        continue;
+      }
+      anchorsByFilePath.set(row.id, anchor);
+      pathsByAnchor.set(anchor, row.id);
+    }
+    if (anchorsByFilePath.size === lastIndexSize) {
+      settledPasses++;
+      return;
+    }
+    lastIndexSize = anchorsByFilePath.size;
+    settledPasses = 0;
+  }
+  function syncViewedRowForToggle(toggle) {
+    const region = toggle.closest(DIFF_REGION_SELECTOR);
+    if (!region) {
+      console.debug(LOG_PREFIX, "A toggled viewed button sits outside any diff region", toggle);
+      return;
+    }
+    const path = pathsByAnchor.get(region.id);
+    if (!path) {
+      return;
+    }
+    const row = document.getElementById(path);
+    if (!row) {
+      return;
+    }
+    applyViewedState(row, toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === "true");
+  }
+  function readViewedState() {
+    const viewedByAnchor = /* @__PURE__ */ new Map();
+    for (const toggle of document.querySelectorAll(VIEWED_TOGGLE_SELECTOR)) {
+      const region = toggle.closest(DIFF_REGION_SELECTOR);
+      if (!region) {
+        console.debug(LOG_PREFIX, "Found a viewed toggle outside any diff region", toggle);
+        continue;
+      }
+      viewedByAnchor.set(region.id, toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === "true");
+    }
+    return viewedByAnchor;
+  }
+  function findFilesUnder(row, viewedByAnchor) {
+    const own = anchorsByFilePath.get(row.id);
+    if (own) {
+      return [{ path: row.id, anchor: own, isViewed: viewedByAnchor.get(own) === true }];
+    }
+    const prefix = `${row.id}/`;
+    const contents = [];
+    for (const [path, anchor] of anchorsByFilePath) {
+      if (path.startsWith(prefix)) {
+        contents.push({ path, anchor, isViewed: viewedByAnchor.get(anchor) === true });
+      }
+    }
+    return contents;
+  }
   function addReviewTogglesToTree() {
     const rows = document.querySelectorAll(FILE_TREE_ITEM_SELECTOR);
     if (!rows.length) {
@@ -420,29 +504,28 @@
       console.debug(LOG_PREFIX, "A review button is not inside a tree row", button);
       return;
     }
-    const anchors = findFileAnchorsUnder(row);
-    if (!anchors.length) {
+    const contents = findFilesUnder(row, readViewedState());
+    if (!contents.length) {
       console.debug(LOG_PREFIX, "No files found to review under", row.id);
       return;
     }
-    const willBeReviewed = anchors.every(isHeadedForReviewed);
-    setReviewedUnder(row, anchors, !willBeReviewed);
+    const willBeReviewed = contents.every(isHeadedForReviewed);
+    setReviewedUnder(row, contents, !willBeReviewed);
   }
-  function isHeadedForReviewed(anchor) {
-    const queued = pendingPresses.get(anchor);
+  function isHeadedForReviewed(file) {
+    const queued = pendingPresses.get(file.anchor);
     if (queued !== void 0) {
       return queued;
     }
-    const toggle = document.getElementById(anchor)?.querySelector(VIEWED_TOGGLE_SELECTOR);
-    return toggle?.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === "true";
+    return file.isViewed;
   }
-  function setReviewedUnder(row, anchors, shouldBeViewed) {
-    for (const anchor of anchors) {
-      pendingPresses.set(anchor, shouldBeViewed);
+  function setReviewedUnder(row, contents, shouldBeViewed) {
+    for (const file of contents) {
+      pendingPresses.set(file.anchor, shouldBeViewed);
     }
     rowsAwaitingPresses.add(row);
     row.setAttribute(PENDING_PRESSES_MARKER, "true");
-    console.debug(LOG_PREFIX, `Queued ${anchors.length} viewed toggle(s) under ${row.id}`);
+    console.debug(LOG_PREFIX, `Queued ${contents.length} viewed toggle(s) under ${row.id}`);
     if (!shouldBeViewed) {
       applyViewedState(row, false);
       if (row.matches(FILE_TREE_DIRECTORY_SELECTOR)) {
@@ -467,7 +550,7 @@
         row.removeAttribute(PENDING_PRESSES_MARKER);
       }
       rowsAwaitingPresses.clear();
-      rollUpViewedDirectories();
+      syncReviewStateToTree();
       return;
     }
     const [anchor, shouldBeViewed] = nextPress;
@@ -480,86 +563,22 @@
     }
     window.setTimeout(drainNextPress, PRESS_INTERVAL_MS);
   }
-  function findFileAnchorsUnder(row) {
-    if (row.matches(FILE_TREE_ROW_SELECTOR)) {
-      const anchor = anchorsByFilePath.get(row.id);
-      if (!anchor) {
-        return [];
-      }
-      return [anchor];
-    }
-    const prefix = `${row.id}/`;
-    const anchors = [];
-    for (const [path, anchor] of anchorsByFilePath) {
-      if (path.startsWith(prefix)) {
-        anchors.push(anchor);
-      }
-    }
-    return anchors;
-  }
-  function markViewedFilesInTree() {
-    const rows = document.querySelectorAll(FILE_TREE_ROW_SELECTOR);
-    if (!rows.length) {
-      return;
-    }
-    if (cachedTreePathname !== window.location.pathname) {
-      anchorsByFilePath.clear();
-      cachedTreePathname = window.location.pathname;
-    }
-    const viewedByAnchor = /* @__PURE__ */ new Map();
-    for (const toggle of document.querySelectorAll(VIEWED_TOGGLE_SELECTOR)) {
-      const region = toggle.closest(DIFF_REGION_SELECTOR);
-      if (!region) {
-        console.debug(LOG_PREFIX, "Found a viewed toggle outside any diff region", toggle);
-        continue;
-      }
-      viewedByAnchor.set(region.id, toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === "true");
-    }
-    for (const row of rows) {
-      const anchor = getRowAnchor(row);
-      if (!anchor) {
-        continue;
-      }
-      anchorsByFilePath.set(row.id, anchor);
-      const isViewed = viewedByAnchor.get(anchor);
-      if (isViewed !== void 0) {
-        applyViewedState(row, isViewed);
-      }
-    }
-  }
-  function syncViewedRowForToggle(toggle) {
-    const region = toggle.closest(DIFF_REGION_SELECTOR);
-    if (!region) {
-      console.debug(LOG_PREFIX, "A toggled viewed button sits outside any diff region", toggle);
-      return;
-    }
-    const row = document.querySelector(
-      `${FILE_TREE_ROW_SELECTOR}:has(a[href="#${region.id}"])`
-    );
-    if (!row) {
-      console.debug(LOG_PREFIX, "No file tree row links to", region.id);
-      return;
-    }
-    applyViewedState(row, toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === "true");
-  }
-  function rollUpViewedDirectories() {
+  function rollUpViewedDirectories(viewedByAnchor) {
     if (isDrainingPresses) {
       return;
     }
-    const directories = document.querySelectorAll(FILE_TREE_DIRECTORY_SELECTOR);
-    if (!directories.length) {
+    if (settledPasses < SETTLED_PASSES_BEFORE_ROLLUP) {
+      console.debug(LOG_PREFIX, `Sidebar still settling at ${anchorsByFilePath.size} files; holding the roll-up`);
       return;
     }
     const completedDirectories = /* @__PURE__ */ new Set();
-    for (const directory of directories) {
-      const files = directory.querySelectorAll(FILE_TREE_ROW_SELECTOR);
-      if (!files.length) {
-        if (directory.hasAttribute(VIEWED_TREE_ROW_MARKER)) {
-          completedDirectories.add(directory);
-        }
+    for (const directory of document.querySelectorAll(FILE_TREE_DIRECTORY_SELECTOR)) {
+      const contents = findFilesUnder(directory, viewedByAnchor);
+      if (!contents.length) {
+        console.debug(LOG_PREFIX, "A directory row holds no files from the comparison", directory.id);
         continue;
       }
-      const isComplete = Array.from(files).every((file) => file.hasAttribute(VIEWED_TREE_ROW_MARKER));
+      const isComplete = contents.every((file) => file.isViewed);
       applyViewedState(directory, isComplete);
       if (isComplete) {
         completedDirectories.add(directory);
@@ -623,24 +642,10 @@
     button.title = label;
     button.setAttribute("aria-label", label);
   }
-  function getRowAnchor(row) {
-    const cached = anchorsByRow.get(row);
-    if (cached) {
-      return cached;
-    }
-    const link = row.querySelector('a[href^="#diff-"]');
-    const anchor = link?.getAttribute("href")?.slice(1);
-    if (!anchor) {
-      console.debug(LOG_PREFIX, "A file tree row has no link to a diff region", row);
-      return null;
-    }
-    anchorsByRow.set(row, anchor);
-    return anchor;
-  }
 
   // src/content/index.ts
   var PULL_CONVERSATION_PATTERN = /^\/[^/]+\/[^/]+\/pull\/\d+\/?$/;
-  var PULL_FILES_PATTERN = /^\/[^/]+\/[^/]+\/pull\/\d+\/(files|changes)\/?$/;
+  var PULL_FILES_PATTERN = /^\/[^/]+\/[^/]+\/pull\/\d+\/(files|changes)(\/[0-9a-f]{7,40}(\.\.[0-9a-f]{7,40})?)?\/?$/;
   var FILES_SCAN_INTERVAL_MS = 400;
   function runEnhancements() {
     const pathname = window.location.pathname;
@@ -677,8 +682,7 @@
     }
     reserveAccurateDiffHeights();
     addReviewTogglesToTree();
-    markViewedFilesInTree();
-    rollUpViewedDirectories();
+    syncReviewStateToTree();
     renderPdfPreviews();
   }
   var scheduledFrame = 0;
@@ -694,15 +698,10 @@
   var structureObserver = new MutationObserver(scheduleRun);
   structureObserver.observe(document.body, { childList: true, subtree: true });
   var viewedObserver = new MutationObserver((records) => {
-    let didSyncAnyRow = false;
     for (const record of records) {
       if (record.target instanceof HTMLElement && record.target.matches(VIEWED_TOGGLE_SELECTOR)) {
         syncViewedRowForToggle(record.target);
-        didSyncAnyRow = true;
       }
-    }
-    if (didSyncAnyRow) {
-      rollUpViewedDirectories();
     }
   });
   viewedObserver.observe(document.body, {

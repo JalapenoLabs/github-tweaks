@@ -15,16 +15,11 @@
 // from the head commit details that GitHub embeds in the page as JSON, plus the file path
 // shown in the diff header.
 
-import { LOG_PREFIX, PDF_PROCESSED_MARKER } from '../constants'
+import { DIRECTIONAL_MARKS_PATTERN, LOG_PREFIX, PDF_PROCESSED_MARKER } from '../constants'
 
 // The exact text GitHub renders in the body of a binary diff it will not display.
 const BINARY_NOTICE_TEXT = 'Binary file not shown.'
 const PREVIEW_HEIGHT_PX = 800
-
-// GitHub wraps file paths in bidirectional control marks (so right-to-left names render
-// correctly); strip them before using the path in a URL or extension check. The class
-// covers the LRM/RLM marks plus the bidi embedding/override and isolate ranges.
-const DIRECTIONAL_MARKS_PATTERN = /[‎‏‪-‮⁦-⁩]/g
 
 type HeadRefs = {
   owner: string

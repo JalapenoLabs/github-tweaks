@@ -16,14 +16,15 @@ import { renderPdfPreviews } from './pdfPreview'
 import { reserveAccurateDiffHeights } from './diffPlaceholders'
 import {
   addReviewTogglesToTree,
-  markViewedFilesInTree,
-  rollUpViewedDirectories,
+  syncReviewStateToTree,
   syncViewedRowForToggle
 } from './fileTreeViewedState'
 
 const PULL_CONVERSATION_PATTERN = /^\/[^/]+\/[^/]+\/pull\/\d+\/?$/
-// The classic diff UI lives at /files; the modern React UI lives at /changes.
-const PULL_FILES_PATTERN = /^\/[^/]+\/[^/]+\/pull\/\d+\/(files|changes)\/?$/
+// The classic diff UI lives at /files; the modern React UI lives at /changes. Either can be
+// narrowed to one commit, or to a range between two, by appending them to the path.
+const PULL_FILES_PATTERN =
+  /^\/[^/]+\/[^/]+\/pull\/\d+\/(files|changes)(\/[0-9a-f]{7,40}(\.\.[0-9a-f]{7,40})?)?\/?$/
 
 // The Files tab enhancements each sweep the whole diff column, which on a several-hundred
 // file pull request is a few milliseconds of tree walking. GitHub mutates that column
@@ -81,8 +82,7 @@ function runFilesScan() {
 
   reserveAccurateDiffHeights()
   addReviewTogglesToTree()
-  markViewedFilesInTree()
-  rollUpViewedDirectories()
+  syncReviewStateToTree()
   renderPdfPreviews()
 }
 
@@ -108,20 +108,15 @@ structureObserver.observe(document.body, { childList: true, subtree: true })
 // structural observer above never hears about it. Watching that one attribute lets the
 // sidebar answer on the spot rather than waiting out the scan interval, which is far too
 // slow to acknowledge a click the user just made.
+// Only the row behind each toggle is repainted here. Rolling the folders up as well would mean
+// three walks of a several-hundred file document per press, which marking a folder turns into
+// ten a second; the sweep above carries that within 400ms, which no one perceives as lag on a
+// folder while the file itself answers instantly.
 const viewedObserver = new MutationObserver((records) => {
-  let didSyncAnyRow = false
-
   for (const record of records) {
     if (record.target instanceof HTMLElement && record.target.matches(VIEWED_TOGGLE_SELECTOR)) {
       syncViewedRowForToggle(record.target)
-      didSyncAnyRow = true
     }
-  }
-
-  // Roll up once for the whole batch rather than once per file, since marking the last file in
-  // a folder is exactly the moment its parents finish too.
-  if (didSyncAnyRow) {
-    rollUpViewedDirectories()
   }
 })
 viewedObserver.observe(document.body, {

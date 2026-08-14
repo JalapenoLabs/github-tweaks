@@ -25,10 +25,40 @@ the folder.
 
 ## Reading the state
 
-We read GitHub's per-file toggle rather than tracking clicks, so we also pick up the state the
-server restores on load and anything marked viewed in another tab. The `diff-<sha>` fragment
-joins the two halves of the page: the toggle lives inside the file's diff region, and the tree
-row links to that same fragment.
+Each half of the page holds one of the two things needed, and neither holds both.
+
+**The sidebar knows the paths.** A tree row's `id` is the file's full path and the row links to
+its `diff-<sha>` region, so the sidebar supplies the path-to-anchor index. The diff column
+cannot: its headers are display text, ellipsising long paths and spelling renames `old → new`.
+See [github-dom.md](./github-dom.md) for why no complete path list exists anywhere on the page.
+
+**The diff column knows the state.** It carries the real "Viewed" toggle for every file and
+stays in the DOM whether or not a file is on screen, so state is always readable by anchor.
+Reading the toggle rather than tracking clicks also picks up what the server restores on load,
+and anything marked viewed in another tab.
+
+### The sidebar is a moving target
+
+It renders progressively on a large pull request, and unmounts a folder's rows when that folder
+collapses. Two consequences shape the design:
+
+- **The index accumulates and is never discarded.** A folder that has collapsed still resolves
+  to every file underneath it, which is what makes undoing a finished folder possible at all.
+- **Folders are not judged until the index stops growing.** Two consecutive passes with no new
+  paths counts as settled. Judging against a half-rendered sidebar folds away folders that
+  still have files waiting in them, and since nothing announces that the sidebar has finished,
+  settling on it is the available answer.
+
+### Two paths, by cost
+
+`syncViewedRowForToggle` repaints the single row behind a toggle that changed. Every lookup is
+by key, including the row itself: a tree row is keyed by its path, so `getElementById` finds it
+without searching.
+
+`syncReviewStateToTree` repaints everything and rolls the folders up. It walks the document
+three times, so it runs on the 400ms sweep and once when a press queue drains, never per press.
+Marking a folder turns presses into ten a second, and three document walks at that rate is the
+jank this extension exists to remove.
 
 ## Writing the state
 
@@ -36,12 +66,9 @@ Pressing a row's checkmark clicks the real toggles in the diff column. Nothing h
 what "viewed" means; it only presses GitHub's buttons and lets the observer watching them
 paint the result back.
 
-A directory's button stands for every file beneath it, resolved through a **path map** rather
-than the DOM. This matters: a finished folder auto-collapses, Primer unmounts its rows, and
-the whole point of clicking its green check is to undo it. Walking the DOM at that moment
-finds nothing. So every file path the tree has shown is kept mapped to its diff anchor, and a
-directory takes every path under `<its id>/`. Un-reviewing a directory also reopens it, since
-leaving it shut would hide the files the user just asked to read again.
+A directory's button stands for every file beneath it, taken from the accumulated index as
+every path under `<its id>/`. Un-reviewing a directory also reopens it, since leaving it shut
+would hide the files the user just asked to read again.
 
 ### Presses are paced
 

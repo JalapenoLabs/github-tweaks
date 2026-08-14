@@ -104,9 +104,16 @@ the console:
 copy(document.documentElement.outerHTML)
 ```
 
-Save it in the repository root. `sample.html` is a conversation page and `huge-pr-sample.html`
-a several-hundred file diff. **`.gitignore` excludes `*sample*.html` and it must stay that
-way:** a capture contains the full source of whatever pull request it came from.
+Save it in the repository root. Three are worth keeping, because they fail in different ways:
+
+| Capture | Is |
+| --- | --- |
+| `sample.html` | a conversation page, for the merge box |
+| `huge-pr-sample.html` | a several-hundred file diff, with renames and undersized placeholders |
+| `commit-changes-sample.html` | a commit-scoped `/changes/<sha>` view, whose sidebar is partly rendered |
+
+**`.gitignore` excludes `*sample*.html` and it must stay that way:** a capture contains the
+full source of whatever pull request it came from.
 
 Then drive the built bundle:
 

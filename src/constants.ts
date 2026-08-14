@@ -25,6 +25,11 @@ export const UNREVIEW_LABEL = 'Mark unreviewed'
 // can show it is mid-flight and refuse a second press until the batch lands.
 export const PENDING_PRESSES_MARKER = 'data-pr-enhancer-pending'
 
+// GitHub wraps file paths in bidirectional control marks so right-to-left names render the
+// right way round. Strip them before using a path as a key, a URL, or an extension check. The
+// class covers the LRM and RLM marks plus the bidi embedding, override and isolate ranges.
+export const DIRECTIONAL_MARKS_PATTERN = /[‎‏‪-‮⁦-⁩]/g
+
 // Only these hosts may be fetched by the viewer page, which sends the user's GitHub
 // cookies. Restricting the origin prevents the viewer from being abused as a credentialed
 // fetch proxy for arbitrary URLs.

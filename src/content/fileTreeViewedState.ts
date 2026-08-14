@@ -3,22 +3,27 @@
 // Turns the file tree sidebar into the place you track a review from: every row shows whether
 // it is done, and lets you say so.
 //
-// Reading the state: GitHub keeps "Viewed" out of the sidebar entirely, so a long review
-// offers no sense of progress without scrolling the diff column to check. The two halves of
-// the page share a join key. Every file renders a `diff-<sha of its path>` region carrying the
-// real toggle, and the matching tree row wraps a link to that same fragment. Reading the
-// toggle rather than tracking clicks also picks up the state GitHub restores from the server
-// on load, and anything marked viewed in another tab.
+// Each half of the page holds one of the two things we need, and neither holds both.
 //
-// Writing it: the checkmark on each row is a real button, and clicking it clicks the real
-// toggles in the diff column. A directory's button stands for everything beneath it. As with
-// the merge dock, GitHub keeps sole ownership of what "viewed" means; we only press its
-// buttons.
+// The sidebar knows the paths. A tree row's `id` is the file's full path, and the row links to
+// its `diff-<sha>` region, so the sidebar is where the path-to-anchor index comes from. The
+// diff header cannot supply it: that text is display, so a rename reads "old → new" and a long
+// path is ellipsised down to "…/common/getUniqueDestinationPath.ts".
 //
-// That button is the one node we inject into React's tree, so the sweep re-adds it if React
-// ever takes it back. The viewed *state* is still recorded as an attribute rather than a
-// class, because React rewrites `className` on every re-render while leaving attributes it
-// never set alone.
+// The diff column knows the state. It carries the real "Viewed" toggle for every file in the
+// comparison and stays in the DOM whether or not a file is on screen, so a file's state is
+// always readable through its anchor.
+//
+// What makes this more than a lookup is that the sidebar is a moving target. It renders
+// progressively on a large pull request, and it unmounts a folder's rows when that folder
+// collapses. So the index is accumulated and never discarded, and the roll-up refuses to judge
+// anything until the index accounts for every file in the comparison. Calling a folder
+// finished on the strength of four rows when the comparison holds nine is how you fold away a
+// folder that still has files waiting in it.
+//
+// Writing state works the way the merge dock does: the checkmark on each row is a real button
+// that presses GitHub's own per-file toggles. GitHub keeps sole ownership of what "viewed"
+// means; we only press its buttons and paint back what it decides.
 
 import {
   LOG_PREFIX,
@@ -39,15 +44,30 @@ import {
   VIEWED_TOGGLE_STATE_ATTRIBUTE
 } from './githubSelectors'
 
-// A tree row's link never changes, so resolving it once keeps the repeated sweeps down to one
-// attribute read each.
-const anchorsByRow = new WeakMap<HTMLElement, string>()
+type DiffFile = {
+  path: string
+  anchor: string
+  isViewed: boolean
+}
 
-// Every file path the tree has shown, mapped to its diff anchor. This is a plain Map rather
-// than something derived on demand because a collapsed directory unmounts its rows, and
-// un-reviewing a finished folder still has to reach the files underneath it.
+// Every file path the sidebar has ever shown, mapped to its diff anchor. Accumulated rather
+// than rebuilt, because the sidebar unmounts a collapsed folder's rows and we still have to
+// reach the files underneath it: undoing a finished folder is the whole point of its green
+// checkmark, and by then its rows are gone.
 const anchorsByFilePath = new Map<string, string>()
-let cachedTreePathname = ''
+const pathsByAnchor = new Map<string, string>()
+let indexedPathname = ''
+
+// How many consecutive passes the index has to stop growing before folders are judged. The
+// sidebar streams its rows in, and a folder judged against a half-rendered one folds away with
+// files still waiting inside it. Nothing in the page announces that the sidebar has finished,
+// and no complete list of paths exists to check against: the diff headers ellipsise long names
+// and spell renames "old → new", and the table labels that do carry a full path are only
+// present for files whose diff body has rendered. So settle on it instead of asking.
+const SETTLED_PASSES_BEFORE_ROLLUP = 2
+
+let lastIndexSize = -1
+let settledPasses = 0
 
 // Directories collapse once per completion, not once per sweep. A folder the user reopens to
 // re-read stays open, and dropping a directory from this set the moment it goes incomplete
@@ -66,6 +86,128 @@ const PRESS_INTERVAL_MS = 100
 const pendingPresses = new Map<string, boolean>()
 const rowsAwaitingPresses = new Set<HTMLElement>()
 let isDrainingPresses = false
+
+// Repaints the sidebar: which files are viewed, which folders are finished, and which of those
+// should fold away.
+export function syncReviewStateToTree() {
+  indexTreeRows()
+
+  const viewedByAnchor = readViewedState()
+
+  for (const row of document.querySelectorAll<HTMLElement>(FILE_TREE_ROW_SELECTOR)) {
+    const anchor = anchorsByFilePath.get(row.id)
+    if (!anchor) {
+      continue
+    }
+
+    applyViewedState(row, viewedByAnchor.get(anchor) === true)
+  }
+
+  rollUpViewedDirectories(viewedByAnchor)
+}
+
+// Records the path and anchor of every file row the sidebar is currently showing. Rows arrive
+// over several passes on a large pull request, and vanish again when a folder collapses, so
+// this only ever adds.
+function indexTreeRows() {
+  // Turbo moves between pull requests without a reload, and paths are not unique across them.
+  if (indexedPathname !== window.location.pathname) {
+    anchorsByFilePath.clear()
+    pathsByAnchor.clear()
+    indexedPathname = window.location.pathname
+    lastIndexSize = -1
+    settledPasses = 0
+  }
+
+  for (const row of document.querySelectorAll<HTMLElement>(FILE_TREE_ROW_SELECTOR)) {
+    if (anchorsByFilePath.has(row.id)) {
+      continue
+    }
+
+    const anchor = row.querySelector<HTMLAnchorElement>('a[href^="#diff-"]')?.getAttribute('href')?.slice(1)
+    if (!anchor) {
+      console.debug(LOG_PREFIX, 'A file tree row has no link to a diff region', row.id)
+      continue
+    }
+
+    anchorsByFilePath.set(row.id, anchor)
+    pathsByAnchor.set(anchor, row.id)
+  }
+
+  if (anchorsByFilePath.size === lastIndexSize) {
+    settledPasses++
+    return
+  }
+
+  lastIndexSize = anchorsByFilePath.size
+  settledPasses = 0
+}
+
+// Repaints the one row behind a toggle that just changed. Every lookup here is by key, so this
+// stays cheap enough to run on each press of a draining batch; the full sweep above walks the
+// document three times and is far too heavy to run ten times a second.
+export function syncViewedRowForToggle(toggle: HTMLElement) {
+  const region = toggle.closest<HTMLElement>(DIFF_REGION_SELECTOR)
+  if (!region) {
+    console.debug(LOG_PREFIX, 'A toggled viewed button sits outside any diff region', toggle)
+    return
+  }
+
+  const path = pathsByAnchor.get(region.id)
+  if (!path) {
+    // The sidebar has not shown this file yet, so there is no row to paint. The next full
+    // sweep indexes it.
+    return
+  }
+
+  // A tree row is keyed by its path, so this is the row without searching for it.
+  const row = document.getElementById(path)
+  if (!row) {
+    // Its folder is collapsed, so the row is unmounted. Nothing to paint, and nothing wrong.
+    return
+  }
+
+  applyViewedState(row, toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === 'true')
+}
+
+// Reads the state of every file in the comparison in a single pass. Answering one file at a
+// time instead would be a DOM query per file per directory, which on a four hundred file
+// review is tens of thousands of lookups for one repaint.
+function readViewedState(): Map<string, boolean> {
+  const viewedByAnchor = new Map<string, boolean>()
+
+  for (const toggle of document.querySelectorAll<HTMLElement>(VIEWED_TOGGLE_SELECTOR)) {
+    const region = toggle.closest<HTMLElement>(DIFF_REGION_SELECTOR)
+    if (!region) {
+      console.debug(LOG_PREFIX, 'Found a viewed toggle outside any diff region', toggle)
+      continue
+    }
+
+    viewedByAnchor.set(region.id, toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === 'true')
+  }
+
+  return viewedByAnchor
+}
+
+// A file row stands for itself; a directory row stands for every file whose path sits beneath
+// it. Both read from the accumulated index, so a folder whose rows have been collapsed away
+// still resolves to everything it contains.
+function findFilesUnder(row: HTMLElement, viewedByAnchor: Map<string, boolean>): DiffFile[] {
+  const own = anchorsByFilePath.get(row.id)
+  if (own) {
+    return [{ path: row.id, anchor: own, isViewed: viewedByAnchor.get(own) === true }]
+  }
+
+  const prefix = `${row.id}/`
+  const contents: DiffFile[] = []
+  for (const [path, anchor] of anchorsByFilePath) {
+    if (path.startsWith(prefix)) {
+      contents.push({ path, anchor, isViewed: viewedByAnchor.get(anchor) === true })
+    }
+  }
+
+  return contents
+}
 
 // Gives every row its checkmark button. React owns these rows, so rather than trust one
 // insertion to last, the sweep checks and re-adds. A row already carrying its button costs one
@@ -114,48 +256,41 @@ function onReviewToggleClick(event: MouseEvent) {
     return
   }
 
-  const anchors = findFileAnchorsUnder(row)
-  if (!anchors.length) {
+  const contents = findFilesUnder(row, readViewedState())
+  if (!contents.length) {
     console.debug(LOG_PREFIX, 'No files found to review under', row.id)
     return
   }
 
   // Decide against where the row is heading, not the checkmark it currently shows. A press
   // queued a moment ago has not painted yet, so a user reversing their own last click would
-  // otherwise be read as confirming it and the file would end up pressed twice into the same
-  // state. Reading the toggles also sidesteps a directory mark the roll-up has not caught up
-  // with.
-  const willBeReviewed = anchors.every(isHeadedForReviewed)
-  setReviewedUnder(row, anchors, !willBeReviewed)
+  // otherwise be read as confirming it, and the file would be pressed twice into one state.
+  const willBeReviewed = contents.every(isHeadedForReviewed)
+  setReviewedUnder(row, contents, !willBeReviewed)
 }
 
 // Where a file will stand once everything queued for it has landed.
-function isHeadedForReviewed(anchor: string): boolean {
-  const queued = pendingPresses.get(anchor)
+function isHeadedForReviewed(file: DiffFile): boolean {
+  const queued = pendingPresses.get(file.anchor)
   if (queued !== undefined) {
     return queued
   }
 
-  const toggle = document.getElementById(anchor)?.querySelector(VIEWED_TOGGLE_SELECTOR)
-  return toggle?.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === 'true'
+  return file.isViewed
 }
 
-// Marks a row and, for a directory, everything beneath it. We do not write the state
-// ourselves: we press the real per-file toggles that already own it, and let the observer
-// watching them paint the result back onto the tree.
-function setReviewedUnder(row: HTMLElement, anchors: string[], shouldBeViewed: boolean) {
-  for (const anchor of anchors) {
-    pendingPresses.set(anchor, shouldBeViewed)
+function setReviewedUnder(row: HTMLElement, contents: DiffFile[], shouldBeViewed: boolean) {
+  for (const file of contents) {
+    pendingPresses.set(file.anchor, shouldBeViewed)
   }
 
   rowsAwaitingPresses.add(row)
   row.setAttribute(PENDING_PRESSES_MARKER, 'true')
-  console.debug(LOG_PREFIX, `Queued ${anchors.length} viewed toggle(s) under ${row.id}`)
+  console.debug(LOG_PREFIX, `Queued ${contents.length} viewed toggle(s) under ${row.id}`)
 
   // Clearing a row's mark straight away is honest: the moment the first file is un-reviewed
   // the row is no longer complete. Setting one early would not be, so a row being reviewed
-  // waits for its queue to land and the roll-up to confirm it. A collapsed directory needs
-  // this either way, having no mounted rows for the sweep to re-derive its state from.
+  // waits for its queue to land and the roll-up to confirm it.
   if (!shouldBeViewed) {
     applyViewedState(row, false)
 
@@ -188,7 +323,7 @@ function drainNextPress() {
     rowsAwaitingPresses.clear()
 
     // The roll-up sits out the drain, so hand it the one run that counts.
-    rollUpViewedDirectories()
+    syncReviewStateToTree()
     return
   }
 
@@ -210,97 +345,9 @@ function drainNextPress() {
   window.setTimeout(drainNextPress, PRESS_INTERVAL_MS)
 }
 
-// A file row stands only for itself. A directory stands for every file whose path sits beneath
-// it, which is resolved through the path map rather than the DOM: the whole point of clicking
-// a finished folder's checkmark is to undo it, and by then its rows are collapsed away.
-function findFileAnchorsUnder(row: HTMLElement): string[] {
-  if (row.matches(FILE_TREE_ROW_SELECTOR)) {
-    const anchor = anchorsByFilePath.get(row.id)
-    if (!anchor) {
-      return []
-    }
-
-    return [anchor]
-  }
-
-  const prefix = `${row.id}/`
-  const anchors: string[] = []
-  for (const [path, anchor] of anchorsByFilePath) {
-    if (path.startsWith(prefix)) {
-      anchors.push(anchor)
-    }
-  }
-
-  return anchors
-}
-
-// Re-reads every toggle and repaints the whole sidebar. Used when GitHub streams more of the
-// pull request in, which is the only time the set of rows can change.
-export function markViewedFilesInTree() {
-  const rows = document.querySelectorAll<HTMLElement>(FILE_TREE_ROW_SELECTOR)
-  if (!rows.length) {
-    return
-  }
-
-  // Turbo moves between pull requests without a reload, and file paths are not unique across
-  // them.
-  if (cachedTreePathname !== window.location.pathname) {
-    anchorsByFilePath.clear()
-    cachedTreePathname = window.location.pathname
-  }
-
-  const viewedByAnchor = new Map<string, boolean>()
-  for (const toggle of document.querySelectorAll<HTMLElement>(VIEWED_TOGGLE_SELECTOR)) {
-    const region = toggle.closest<HTMLElement>(DIFF_REGION_SELECTOR)
-    if (!region) {
-      console.debug(LOG_PREFIX, 'Found a viewed toggle outside any diff region', toggle)
-      continue
-    }
-
-    viewedByAnchor.set(region.id, toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === 'true')
-  }
-
-  for (const row of rows) {
-    const anchor = getRowAnchor(row)
-    if (!anchor) {
-      continue
-    }
-
-    anchorsByFilePath.set(row.id, anchor)
-
-    // A row whose file has not rendered yet has no toggle to read. Leaving it untouched keeps
-    // whatever we last knew rather than flashing it back to unviewed.
-    const isViewed = viewedByAnchor.get(anchor)
-    if (isViewed !== undefined) {
-      applyViewedState(row, isViewed)
-    }
-  }
-}
-
-// Repaints the single row behind a toggle the user just clicked. The full sweep runs on a lazy
-// cadence to stay off the scroll path, which is too slow to acknowledge your own click, so this
-// path answers immediately and leaves the sweep to catch everything else.
-export function syncViewedRowForToggle(toggle: HTMLElement) {
-  const region = toggle.closest<HTMLElement>(DIFF_REGION_SELECTOR)
-  if (!region) {
-    console.debug(LOG_PREFIX, 'A toggled viewed button sits outside any diff region', toggle)
-    return
-  }
-
-  const row = document.querySelector<HTMLElement>(
-    `${FILE_TREE_ROW_SELECTOR}:has(a[href="#${region.id}"])`
-  )
-  if (!row) {
-    console.debug(LOG_PREFIX, 'No file tree row links to', region.id)
-    return
-  }
-
-  applyViewedState(row, toggle.getAttribute(VIEWED_TOGGLE_STATE_ATTRIBUTE) === 'true')
-}
-
-// Rolls the file marks up the tree: a directory whose every descendant file is viewed gets the
-// same checkmark, and folds itself away so what remains on screen is what is left to review.
-export function rollUpViewedDirectories() {
+// Rolls the file marks up the tree: a directory whose every file is viewed gets the same
+// checkmark, and folds itself away so what remains on screen is what is left to review.
+function rollUpViewedDirectories(viewedByAnchor: Map<string, boolean>) {
   // While a queued batch is still landing, the tree is mid-transition: a folder would be
   // judged incomplete on every press and complete on the last, flickering the whole way
   // through. The drain runs one roll-up when it finishes, which is the only one that is true.
@@ -308,28 +355,21 @@ export function rollUpViewedDirectories() {
     return
   }
 
-  const directories = document.querySelectorAll<HTMLElement>(FILE_TREE_DIRECTORY_SELECTOR)
-  if (!directories.length) {
+  if (settledPasses < SETTLED_PASSES_BEFORE_ROLLUP) {
+    console.debug(LOG_PREFIX, `Sidebar still settling at ${anchorsByFilePath.size} files; holding the roll-up`)
     return
   }
 
   const completedDirectories = new Set<HTMLElement>()
 
-  for (const directory of directories) {
-    // Descendants, not children: a folder is only finished when everything beneath it is,
-    // however deep, and nested rows live inside this element.
-    const files = directory.querySelectorAll<HTMLElement>(FILE_TREE_ROW_SELECTOR)
-
-    // A collapsed directory has unmounted its files, so there is nothing left to count. Keep
-    // whatever we last concluded instead of clearing a checkmark we cannot currently re-earn.
-    if (!files.length) {
-      if (directory.hasAttribute(VIEWED_TREE_ROW_MARKER)) {
-        completedDirectories.add(directory)
-      }
+  for (const directory of document.querySelectorAll<HTMLElement>(FILE_TREE_DIRECTORY_SELECTOR)) {
+    const contents = findFilesUnder(directory, viewedByAnchor)
+    if (!contents.length) {
+      console.debug(LOG_PREFIX, 'A directory row holds no files from the comparison', directory.id)
       continue
     }
 
-    const isComplete = Array.from(files).every((file) => file.hasAttribute(VIEWED_TREE_ROW_MARKER))
+    const isComplete = contents.every((file) => file.isViewed)
     applyViewedState(directory, isComplete)
 
     if (isComplete) {
@@ -420,21 +460,4 @@ function describeReviewToggle(row: HTMLElement) {
 
   button.title = label
   button.setAttribute('aria-label', label)
-}
-
-function getRowAnchor(row: HTMLElement): string | null {
-  const cached = anchorsByRow.get(row)
-  if (cached) {
-    return cached
-  }
-
-  const link = row.querySelector<HTMLAnchorElement>('a[href^="#diff-"]')
-  const anchor = link?.getAttribute('href')?.slice(1)
-  if (!anchor) {
-    console.debug(LOG_PREFIX, 'A file tree row has no link to a diff region', row)
-    return null
-  }
-
-  anchorsByRow.set(row, anchor)
-  return anchor
 }
