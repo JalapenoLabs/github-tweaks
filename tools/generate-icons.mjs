@@ -8,15 +8,13 @@
 // supersampling, which is a few lines against a page of analytic edge cases and is instant at
 // these sizes.
 //
-// PNG is written directly rather than through a dependency. It is a length, a fourcc, the
-// bytes and a CRC per chunk, and the only compression is a deflate that node already ships.
+// PNG writing lives in png.mjs, which the store banner builder shares.
 //
 //   node tools/generate-icons.mjs
 
-import { deflateSync } from 'node:zlib'
 import { mkdirSync, writeFileSync } from 'node:fs'
 
-import { crc32 } from './crc32.mjs'
+import { encodePng } from './png.mjs'
 
 const OUT_DIR = 'icons'
 const SIZES = [16, 32, 48, 128]
@@ -118,45 +116,10 @@ function renderIcon(size) {
   return rgba
 }
 
-function pngChunk(type, data) {
-  const length = Buffer.alloc(4)
-  length.writeUInt32BE(data.length)
-
-  const body = Buffer.concat([Buffer.from(type, 'latin1'), data])
-  const checksum = Buffer.alloc(4)
-  checksum.writeUInt32BE(crc32(body))
-
-  return Buffer.concat([length, body, checksum])
-}
-
-function encodePng(size, rgba) {
-  const header = Buffer.alloc(13)
-  header.writeUInt32BE(size, 0)
-  header.writeUInt32BE(size, 4)
-  header[8] = 8 // bits per channel
-  header[9] = 6 // truecolour with alpha
-  // The remaining three bytes stay zero: deflate, adaptive filtering, no interlacing.
-
-  // Every scanline is prefixed with its filter type. Filtering exists to help the deflate,
-  // and at these sizes the saving is not worth the code, so every line declares "none".
-  const stride = size * 4
-  const raw = Buffer.alloc((stride + 1) * size)
-  for (let y = 0; y < size; y++) {
-    rgba.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride)
-  }
-
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    pngChunk('IHDR', header),
-    pngChunk('IDAT', deflateSync(raw, { level: 9 })),
-    pngChunk('IEND', Buffer.alloc(0))
-  ])
-}
-
 mkdirSync(OUT_DIR, { recursive: true })
 
 for (const size of SIZES) {
-  const png = encodePng(size, renderIcon(size))
+  const png = encodePng(size, size, renderIcon(size))
   const path = `${OUT_DIR}/icon-${size}.png`
 
   writeFileSync(path, png)

@@ -33,6 +33,7 @@
     "watch": "node build.mjs --watch",
     "typecheck": "tsc --noEmit",
     "icons": "node tools/generate-icons.mjs",
+    "banners": "node tools/prepare-banners.mjs",
     "package": "npm run build && node tools/package-extension.mjs"
   },
   "devDependencies": {

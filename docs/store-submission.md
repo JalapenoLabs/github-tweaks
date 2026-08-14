@@ -65,13 +65,21 @@ Not affiliated with, endorsed by, or sponsored by GitHub, Inc. "GitHub" is a tra
 | Asset | Size | Status |
 | --- | --- | --- |
 | Store icon | 128×128 | `icons/icon-128.png` |
-| Screenshots (1 to 5) | 1280×800 or 640×400 | **Needed.** See the warning below |
+| Screenshots (1 to 5) | 1280×800 | `screenshots/banners/*.png` |
 | Small promo tile | 440×280 | Optional |
 | Marquee promo tile | 1400×560 | Optional, featured placement only |
 
-> **The screenshots in `screenshots/` cannot be used.** They show file paths, branch names and
-> a title from a private repository, and the listing is public. Retake them against a public
-> pull request. They are also the wrong dimensions.
+Upload the three from `screenshots/banners/`, which are the originals fitted to the store's
+canvas by `npm run banners`. They were taken against this repository's own demo pull request,
+so nothing private appears in them. A suggested order, since the first is what the listing
+leads with:
+
+1. `checkmarks.png` — the sidebar, the hover state and a folder already collapsed
+2. `squash-and-merge-on-gtop.png` — the merge panel moved above the discussion
+3. `back-to-top.png` — the floating dock
+
+> Re-run `npm run banners` after replacing any screenshot, and never capture a private
+> repository: its file names and branches would go straight into a public listing.
 
 ### Additional fields
 

@@ -32,6 +32,7 @@ After editing, run `npm run build` again and press reload on the extension card.
 | `npm run watch` | The same, rebuilding on change |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run icons` | Redraws `icons/*.png` from `tools/generate-icons.mjs` |
+| `npm run banners` | Fits `screenshots/*.png` onto the store's 1280×800 canvas, into `screenshots/banners/` |
 | `npm run package` | Builds, then zips `dist` into `github-pr-enhancer-<version>.zip` for the store |
 
 ## Layout
@@ -50,9 +51,11 @@ src/
     content.css             all injected styling
   viewer/                   extension-origin page that renders the PDF bytes
 tools/
-  generate-icons.mjs        draws the icon at each size, straight to PNG
+  generate-icons.mjs        draws the icon at each size
+  prepare-banners.mjs       fits screenshots onto the store's 1280x800 canvas
   package-extension.mjs     writes the store upload zip
-  crc32.mjs                 shared by both of the above
+  png.mjs                   PNG reader and writer, no image dependency
+  crc32.mjs                 shared by PNG and ZIP, which both stamp one
 docs/                       design decisions, one file per area
 ```
 
@@ -158,12 +161,26 @@ Collapsed a fully reviewed directory: .github
 Queued 6 viewed toggle(s) under electron/src/common
 ```
 
-## Icons
+## Artwork
 
-`npm run icons` redraws `icons/*.png`. The mark is described as maths in a unit square in
+`tools/png.mjs` reads and writes PNG directly, so none of this needs an image dependency. It
+handles 8-bit greyscale, truecolour and alpha; palette, 16-bit and interlaced files are the
+gaps, and it refuses them by name rather than mangling them.
+
+**`npm run icons`** redraws `icons/*.png`. The mark is described as maths in a unit square in
 `tools/generate-icons.mjs`, so each size is drawn at its own resolution rather than resampled
 down from a large one, which is what keeps 16px legible. Edit the constants at the top of that
 file to change it. The PNGs are committed so a plain build needs no image tooling.
+
+**`npm run banners`** fits every screenshot onto the store's 1280×800 canvas, writing to
+`screenshots/banners/` and leaving the originals alone. Nothing is stretched, and nothing is
+resampled up by a fraction: an image smaller than half the canvas is doubled by nearest
+neighbour, which stays crisp, and a larger one is reduced by an area average, which is the
+right filter going down. Padding takes its colour from the source's own top-left pixel, so a
+dark GitHub screenshot lands on a dark canvas.
+
+Retake screenshots against a **public** pull request. A capture of a private repository puts
+its file names and branches into a public listing.
 
 ## Releasing
 
