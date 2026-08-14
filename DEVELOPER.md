@@ -79,6 +79,7 @@ Design decisions live in [`docs/`](docs/), one file per area:
 - [performance.md](docs/performance.md) — why large pull requests stutter and what is done
 - [file-tree.md](docs/file-tree.md) — the sidebar: review state, checkmarks, folder rollup
 - [github-dom.md](docs/github-dom.md) — the DOM contract, and how to re-derive it
+- [store-submission.md](docs/store-submission.md) — every Chrome Web Store field, ready to paste
 
 ## Working against GitHub's DOM
 
@@ -166,7 +167,9 @@ file to change it. The PNGs are committed so a plain build needs no image toolin
    extension does.
 4. `npm run package`
 5. Upload the zip at the
-   [Chrome Web Store dashboard](https://chrome.google.com/webstore/devconsole).
+   [Chrome Web Store dashboard](https://chrome.google.com/webstore/devconsole). Every listing
+   field is written out in [store-submission.md](docs/store-submission.md).
+6. Tag the commit to match the uploaded version.
 
 The archive is reproducible: entries carry a fixed timestamp, so the same `dist` always
 produces identical bytes. If a re-package produces the same file, nothing changed.
